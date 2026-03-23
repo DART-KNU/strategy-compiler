@@ -184,7 +184,7 @@ class ReportBundleBuilder:
             if year not in table:
                 table[year] = {}
             table[year][month] = round(ret * 100, 2)  # as percentage
-        return {str(year): monthly for year, monthly in table.items()}
+        return {str(year): {str(m): v for m, v in monthly.items()} for year, monthly in table.items()}
 
     def _compute_turnover_history(
         self,
