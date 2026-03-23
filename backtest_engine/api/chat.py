@@ -149,7 +149,26 @@ def _print_section(title: str) -> None:
     print()
 
 
+def _fix_stdout_for_mingw() -> None:
+    """
+    Python on Windows opens stdout in text mode, which translates \\n → \\r\\n.
+    MINGW64 (Mintty) treats \\r as cursor-to-column-0, causing the terminal
+    scrollback buffer to capture multiple intermediate states — output appears
+    duplicated.  Switching to newline='\\n' sends bare LF so Mintty renders
+    each line exactly once.
+    """
+    import io
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer,
+            encoding=sys.stdout.encoding or "utf-8",
+            line_buffering=True,
+            newline="\n",
+        )
+
+
 def main() -> None:
+    _fix_stdout_for_mingw()
     parser = argparse.ArgumentParser(description="전략 설계 대화 인터페이스")
     parser.add_argument("--db",      default=_DEFAULT_DB, help="SQLite DB 경로")
     parser.add_argument("--out",     default="runs",      help="결과 저장 디렉터리 (기본: runs/)")
