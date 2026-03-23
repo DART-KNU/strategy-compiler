@@ -194,15 +194,14 @@ def main() -> None:
     print(_box_top())
     print(_box_row("DART Strategy Compiler Ver 1.0", indent=(_W - 2 - 30) // 2))
     print(_box_sep())
-    print(_box_row("경북대학교 금융데이터분석학회 DART"))
-    print(_box_sep())
-    print(_box_row("전략 유형: 모멘텀 / 멀티팩터 / 저변동성 / 밸류 / 벤치마크 추종 / 향상된 인덱스"))
-    print(_box_row("비중 배분: 동일가중 / 스코어비례 / 역변동성 / 마르코위츠 / 리스크버짓"))
-    print(_box_row("백테스트: 2023-03-18 ~ 2026-03-20  |  모드: research / contest"))
-    print(_box_sep())
     print(_box_row("종료: Ctrl+C 또는 'exit'"))
     print(_box_bot())
-    print()
+
+    opening = chat.send(
+        "안녕하세요! 시작 전에 이 백테스트 엔진에서 만들 수 있는 "
+        "퀀트 전략의 종류와 주요 기능을 간략히 소개해주세요."
+    )
+    _print_ai(opening.message)
 
     # ── Main conversation loop ────────────────────────────────────────
     while True:
