@@ -1,0 +1,1645 @@
+{
+  "$defs": {
+    "BenchmarkConfig": {
+      "properties": {
+        "index_code": {
+          "default": "KOSPI200",
+          "description": "Benchmark index code",
+          "title": "Index Code",
+          "type": "string"
+        },
+        "proxy_type": {
+          "$ref": "#/$defs/BenchmarkProxyType",
+          "default": "return_proxy"
+        }
+      },
+      "title": "BenchmarkConfig",
+      "type": "object"
+    },
+    "BenchmarkProxyType": {
+      "enum": [
+        "benchmark_tracking",
+        "enhanced_index",
+        "sector_proxy",
+        "return_proxy"
+      ],
+      "title": "BenchmarkProxyType",
+      "type": "string"
+    },
+    "BenchmarkRefNode": {
+      "description": "Load benchmark index level or return.",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "benchmark_ref",
+          "default": "benchmark_ref",
+          "title": "Type",
+          "type": "string"
+        },
+        "index_code": {
+          "description": "e.g. KOSPI200",
+          "title": "Index Code",
+          "type": "string"
+        },
+        "field": {
+          "default": "close",
+          "description": "open/high/low/close",
+          "title": "Field",
+          "type": "string"
+        },
+        "lag": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Lag",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node_id",
+        "index_code"
+      ],
+      "title": "BenchmarkRefNode",
+      "type": "object"
+    },
+    "BenchmarkTrackingConfig": {
+      "properties": {
+        "type": {
+          "const": "benchmark_tracking",
+          "default": "benchmark_tracking",
+          "title": "Type",
+          "type": "string"
+        },
+        "benchmark_index": {
+          "default": "KOSPI200",
+          "title": "Benchmark Index",
+          "type": "string"
+        },
+        "proxy_type": {
+          "$ref": "#/$defs/BenchmarkProxyType",
+          "default": "benchmark_tracking"
+        },
+        "te_target": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Max tracking error (annualized)",
+          "title": "Te Target"
+        },
+        "turnover_penalty": {
+          "default": 0.001,
+          "title": "Turnover Penalty",
+          "type": "number"
+        },
+        "sector_match": {
+          "default": true,
+          "title": "Sector Match",
+          "type": "boolean"
+        },
+        "top_k": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Max number of names in proxy",
+          "title": "Top K"
+        },
+        "cov_model": {
+          "$ref": "#/$defs/CovarianceModel",
+          "default": "shrinkage_cov"
+        }
+      },
+      "title": "BenchmarkTrackingConfig",
+      "type": "object"
+    },
+    "CombineNode": {
+      "description": "Arithmetic or weighted combination of inputs.",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "combine",
+          "default": "combine",
+          "title": "Type",
+          "type": "string"
+        },
+        "op": {
+          "description": "add/sub/mul/div/weighted_sum/negate/abs/clip/winsorize/if_else/vol_scale",
+          "title": "Op",
+          "type": "string"
+        },
+        "inputs": {
+          "description": "List of input node_ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "node_id",
+        "op",
+        "inputs"
+      ],
+      "title": "CombineNode",
+      "type": "object"
+    },
+    "ConditionNode": {
+      "description": "if_else conditional selection based on a boolean mask.",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "condition",
+          "default": "condition",
+          "title": "Type",
+          "type": "string"
+        },
+        "condition": {
+          "description": "node_id of boolean mask",
+          "title": "Condition",
+          "type": "string"
+        },
+        "true_branch": {
+          "description": "node_id used when condition is True",
+          "title": "True Branch",
+          "type": "string"
+        },
+        "false_branch": {
+          "description": "node_id used when condition is False",
+          "title": "False Branch",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "condition",
+        "true_branch",
+        "false_branch"
+      ],
+      "title": "ConditionNode",
+      "type": "object"
+    },
+    "ConstantNode": {
+      "description": "A scalar constant.",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "constant",
+          "default": "constant",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "node_id",
+        "value"
+      ],
+      "title": "ConstantNode",
+      "type": "object"
+    },
+    "ConstraintSet": {
+      "description": "Portfolio-level constraints applied after allocation.",
+      "properties": {
+        "long_only": {
+          "default": true,
+          "title": "Long Only",
+          "type": "boolean"
+        },
+        "fully_invested": {
+          "default": true,
+          "title": "Fully Invested",
+          "type": "boolean"
+        },
+        "max_weight": {
+          "default": 0.15,
+          "exclusiveMinimum": 0,
+          "maximum": 1.0,
+          "title": "Max Weight",
+          "type": "number"
+        },
+        "min_weight": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Min Weight",
+          "type": "number"
+        },
+        "max_names": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Names"
+        },
+        "min_names": {
+          "default": 5,
+          "minimum": 1,
+          "title": "Min Names",
+          "type": "integer"
+        },
+        "max_sector_weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absolute sector cap",
+          "title": "Max Sector Weight"
+        },
+        "max_sector_multiplier": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sector weight <= multiplier * benchmark_weight",
+          "title": "Max Sector Multiplier"
+        },
+        "small_mcap_threshold_bn": {
+          "default": 1000.0,
+          "description": "Mcap threshold for 'small' in billions KRW",
+          "title": "Small Mcap Threshold Bn",
+          "type": "number"
+        },
+        "max_small_mcap_weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Max aggregate weight in small-cap names",
+          "title": "Max Small Mcap Weight"
+        },
+        "max_adv_participation": {
+          "default": 0.1,
+          "description": "Max fraction of ADV5 in any single trade",
+          "title": "Max Adv Participation",
+          "type": "number"
+        },
+        "max_turnover_weekly": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Turnover Weekly"
+        },
+        "target_cash_weight": {
+          "default": 0.005,
+          "description": "Cash buffer fraction",
+          "title": "Target Cash Weight",
+          "type": "number"
+        },
+        "contest_samsung_cap": {
+          "default": 0.4,
+          "description": "Cap for 005930 in contest mode",
+          "title": "Contest Samsung Cap",
+          "type": "number"
+        },
+        "contest_sector_small_cap": {
+          "default": 0.1,
+          "description": "Sector cap when benchmark weight <=5% in contest mode",
+          "title": "Contest Sector Small Cap",
+          "type": "number"
+        },
+        "contest_sector_large_multiplier": {
+          "default": 2.0,
+          "description": "Sector cap multiplier in contest mode",
+          "title": "Contest Sector Large Multiplier",
+          "type": "number"
+        }
+      },
+      "title": "ConstraintSet",
+      "type": "object"
+    },
+    "CovarianceModel": {
+      "enum": [
+        "diagonal_vol",
+        "sample_cov",
+        "shrinkage_cov"
+      ],
+      "title": "CovarianceModel",
+      "type": "string"
+    },
+    "CsOpNode": {
+      "description": "Cross-sectional operation (rank/zscore/percentile/winsorize/sector_neutralize).",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "cs_op",
+          "default": "cs_op",
+          "title": "Type",
+          "type": "string"
+        },
+        "op": {
+          "title": "Op",
+          "type": "string"
+        },
+        "input": {
+          "title": "Input",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "node_id",
+        "op",
+        "input"
+      ],
+      "title": "CsOpNode",
+      "type": "object"
+    },
+    "DateRange": {
+      "properties": {
+        "start": {
+          "description": "YYYY-MM-DD",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "description": "YYYY-MM-DD",
+          "title": "End",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "DateRange",
+      "type": "object"
+    },
+    "EnhancedIndexConfig": {
+      "properties": {
+        "type": {
+          "const": "enhanced_index",
+          "default": "enhanced_index",
+          "title": "Type",
+          "type": "string"
+        },
+        "benchmark_index": {
+          "default": "KOSPI200",
+          "title": "Benchmark Index",
+          "type": "string"
+        },
+        "alpha_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "node_id of alpha signal",
+          "title": "Alpha Ref"
+        },
+        "alpha_weight": {
+          "default": 1.0,
+          "description": "gamma in maximize(alpha - gamma*TE - eta*turnover)",
+          "exclusiveMinimum": 0,
+          "title": "Alpha Weight",
+          "type": "number"
+        },
+        "te_penalty": {
+          "default": 1.0,
+          "description": "TE penalty",
+          "exclusiveMinimum": 0,
+          "title": "Te Penalty",
+          "type": "number"
+        },
+        "turnover_penalty": {
+          "default": 0.001,
+          "minimum": 0,
+          "title": "Turnover Penalty",
+          "type": "number"
+        },
+        "te_target": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Te Target"
+        },
+        "cov_model": {
+          "$ref": "#/$defs/CovarianceModel",
+          "default": "shrinkage_cov"
+        }
+      },
+      "title": "EnhancedIndexConfig",
+      "type": "object"
+    },
+    "EqualWeightConfig": {
+      "properties": {
+        "type": {
+          "const": "equal_weight",
+          "default": "equal_weight",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "EqualWeightConfig",
+      "type": "object"
+    },
+    "ExecutionConfig": {
+      "properties": {
+        "fill_rule": {
+          "$ref": "#/$defs/FillRule",
+          "default": "next_open"
+        },
+        "commission_bps": {
+          "default": 10.0,
+          "minimum": 0,
+          "title": "Commission Bps",
+          "type": "number"
+        },
+        "sell_tax_bps": {
+          "default": 20.0,
+          "minimum": 0,
+          "title": "Sell Tax Bps",
+          "type": "number"
+        },
+        "slippage_bps": {
+          "default": 10.0,
+          "minimum": 0,
+          "title": "Slippage Bps",
+          "type": "number"
+        },
+        "round_lot": {
+          "default": 1,
+          "description": "Minimum share lot size",
+          "minimum": 1,
+          "title": "Round Lot",
+          "type": "integer"
+        },
+        "partial_fill": {
+          "default": false,
+          "title": "Partial Fill",
+          "type": "boolean"
+        },
+        "initial_capital": {
+          "default": 1000000000.0,
+          "description": "Initial capital in KRW",
+          "exclusiveMinimum": 0,
+          "title": "Initial Capital",
+          "type": "number"
+        }
+      },
+      "title": "ExecutionConfig",
+      "type": "object"
+    },
+    "FieldNode": {
+      "description": "Load a raw field from the DB registry.",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "field",
+          "default": "field",
+          "title": "Type",
+          "type": "string"
+        },
+        "field_id": {
+          "description": "Field ID from the field registry",
+          "title": "Field Id",
+          "type": "string"
+        },
+        "lag": {
+          "default": 0,
+          "description": "Additional lag in business days",
+          "minimum": 0,
+          "title": "Lag",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node_id",
+        "field_id"
+      ],
+      "title": "FieldNode",
+      "type": "object"
+    },
+    "FillRule": {
+      "enum": [
+        "next_open",
+        "next_close",
+        "same_close"
+      ],
+      "title": "FillRule",
+      "type": "string"
+    },
+    "InverseVolConfig": {
+      "properties": {
+        "type": {
+          "const": "inverse_vol",
+          "default": "inverse_vol",
+          "title": "Type",
+          "type": "string"
+        },
+        "vol_field": {
+          "default": "vol_20d",
+          "description": "Field ID for volatility",
+          "title": "Vol Field",
+          "type": "string"
+        },
+        "floor_vol": {
+          "default": 0.005,
+          "description": "Floor to avoid zero division",
+          "exclusiveMinimum": 0,
+          "title": "Floor Vol",
+          "type": "number"
+        }
+      },
+      "title": "InverseVolConfig",
+      "type": "object"
+    },
+    "MeanVarianceConfig": {
+      "properties": {
+        "type": {
+          "const": "mean_variance",
+          "default": "mean_variance",
+          "title": "Type",
+          "type": "string"
+        },
+        "cov_model": {
+          "$ref": "#/$defs/CovarianceModel",
+          "default": "shrinkage_cov"
+        },
+        "cov_lookback": {
+          "default": 60,
+          "minimum": 20,
+          "title": "Cov Lookback",
+          "type": "integer"
+        },
+        "alpha_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "node_id of expected return signal",
+          "title": "Alpha Ref"
+        },
+        "risk_aversion": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Risk Aversion",
+          "type": "number"
+        },
+        "long_only": {
+          "default": true,
+          "title": "Long Only",
+          "type": "boolean"
+        },
+        "fully_invested": {
+          "default": true,
+          "title": "Fully Invested",
+          "type": "boolean"
+        }
+      },
+      "title": "MeanVarianceConfig",
+      "type": "object"
+    },
+    "NodeGraph": {
+      "description": "Directed acyclic graph of computations.\nKeys in 'nodes' dict are node_ids. 'output' is the final score node_id.",
+      "properties": {
+        "nodes": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FieldNode"
+              },
+              {
+                "$ref": "#/$defs/ConstantNode"
+              },
+              {
+                "$ref": "#/$defs/BenchmarkRefNode"
+              },
+              {
+                "$ref": "#/$defs/TsOpNode"
+              },
+              {
+                "$ref": "#/$defs/CsOpNode"
+              },
+              {
+                "$ref": "#/$defs/CombineNode"
+              },
+              {
+                "$ref": "#/$defs/PredicateNode"
+              },
+              {
+                "$ref": "#/$defs/ConditionNode"
+              }
+            ]
+          },
+          "title": "Nodes",
+          "type": "object"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "node_id of the final score",
+          "title": "Output"
+        }
+      },
+      "title": "NodeGraph",
+      "type": "object"
+    },
+    "NullPolicy": {
+      "enum": [
+        "drop",
+        "zero",
+        "ffill",
+        "bfill",
+        "keep_null"
+      ],
+      "title": "NullPolicy",
+      "type": "string"
+    },
+    "PortfolioAggregation": {
+      "description": "How sleeves are combined into a final portfolio.",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/SleeveMixMethod",
+          "default": "fixed_mix"
+        },
+        "sleeve_weights": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "sleeve_id -> weight for fixed_mix (must sum ~1.0)",
+          "title": "Sleeve Weights",
+          "type": "object"
+        },
+        "regime_branches": {
+          "description": "For regime_switch: ordered branches, first True wins",
+          "items": {
+            "$ref": "#/$defs/RegimeBranch"
+          },
+          "title": "Regime Branches",
+          "type": "array"
+        },
+        "default_weights": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Default weights when no regime branch is True",
+          "title": "Default Weights"
+        },
+        "normalize": {
+          "default": true,
+          "title": "Normalize",
+          "type": "boolean"
+        },
+        "final_constraints": {
+          "$ref": "#/$defs/ConstraintSet"
+        },
+        "global_node_graph": {
+          "$ref": "#/$defs/NodeGraph"
+        }
+      },
+      "title": "PortfolioAggregation",
+      "type": "object"
+    },
+    "PredicateNode": {
+      "description": "Boolean predicate: gt/gte/lt/lte/eq/ne/logical_and/logical_or/logical_not.",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "predicate",
+          "default": "predicate",
+          "title": "Type",
+          "type": "string"
+        },
+        "op": {
+          "title": "Op",
+          "type": "string"
+        },
+        "inputs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "node_id",
+        "op",
+        "inputs"
+      ],
+      "title": "PredicateNode",
+      "type": "object"
+    },
+    "RebalanceFrequency": {
+      "enum": [
+        "daily",
+        "weekly",
+        "monthly",
+        "quarterly",
+        "custom"
+      ],
+      "title": "RebalanceFrequency",
+      "type": "string"
+    },
+    "RebalancingConfig": {
+      "properties": {
+        "frequency": {
+          "$ref": "#/$defs/RebalanceFrequency",
+          "default": "monthly"
+        },
+        "day_of_week": {
+          "default": 0,
+          "description": "0=Mon (for weekly)",
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Day Of Week",
+          "type": "integer"
+        },
+        "day_of_month": {
+          "default": 1,
+          "description": "For monthly: rebalance on N-th trading day",
+          "maximum": 28,
+          "minimum": 1,
+          "title": "Day Of Month",
+          "type": "integer"
+        },
+        "custom_dates": {
+          "description": "For custom frequency",
+          "items": {
+            "type": "string"
+          },
+          "title": "Custom Dates",
+          "type": "array"
+        },
+        "look_ahead_buffer": {
+          "default": 1,
+          "description": "Extra buffer days after rebalance signal",
+          "minimum": 0,
+          "title": "Look Ahead Buffer",
+          "type": "integer"
+        }
+      },
+      "title": "RebalancingConfig",
+      "type": "object"
+    },
+    "RegimeBranch": {
+      "description": "A condition-weight pair for regime switching.",
+      "properties": {
+        "condition_node": {
+          "description": "node_id of boolean regime predicate in global graph",
+          "title": "Condition Node",
+          "type": "string"
+        },
+        "weights": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "sleeve_id -> weight",
+          "title": "Weights",
+          "type": "object"
+        }
+      },
+      "required": [
+        "condition_node",
+        "weights"
+      ],
+      "title": "RegimeBranch",
+      "type": "object"
+    },
+    "ReportingConfig": {
+      "properties": {
+        "charts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Charts",
+          "type": "array"
+        },
+        "tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tables",
+          "type": "array"
+        },
+        "top_n_holdings": {
+          "default": 20,
+          "minimum": 1,
+          "title": "Top N Holdings",
+          "type": "integer"
+        },
+        "top_n_trades": {
+          "default": 20,
+          "minimum": 1,
+          "title": "Top N Trades",
+          "type": "integer"
+        },
+        "annualization_factor": {
+          "default": 252,
+          "title": "Annualization Factor",
+          "type": "integer"
+        }
+      },
+      "title": "ReportingConfig",
+      "type": "object"
+    },
+    "RiskBudgetConfig": {
+      "properties": {
+        "type": {
+          "const": "risk_budget",
+          "default": "risk_budget",
+          "title": "Type",
+          "type": "string"
+        },
+        "budgets": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "ticker or group -> risk budget fraction",
+          "title": "Budgets",
+          "type": "object"
+        },
+        "cov_model": {
+          "$ref": "#/$defs/CovarianceModel",
+          "default": "shrinkage_cov"
+        }
+      },
+      "required": [
+        "budgets"
+      ],
+      "title": "RiskBudgetConfig",
+      "type": "object"
+    },
+    "RunMode": {
+      "enum": [
+        "research",
+        "contest"
+      ],
+      "title": "RunMode",
+      "type": "string"
+    },
+    "RunOverrides": {
+      "description": "Ad-hoc overrides for a specific backtest run (not saved to strategy definition).",
+      "properties": {
+        "initial_capital": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Initial Capital"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Date"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Date"
+        },
+        "fill_rule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FillRule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "commission_bps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commission Bps"
+        },
+        "run_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Label"
+        }
+      },
+      "title": "RunOverrides",
+      "type": "object"
+    },
+    "ScoreWeightedConfig": {
+      "properties": {
+        "type": {
+          "const": "score_weighted",
+          "default": "score_weighted",
+          "title": "Type",
+          "type": "string"
+        },
+        "power": {
+          "default": 1.0,
+          "description": "Score raised to this power before normalizing",
+          "exclusiveMinimum": 0,
+          "title": "Power",
+          "type": "number"
+        },
+        "clip_negative": {
+          "default": true,
+          "title": "Clip Negative",
+          "type": "boolean"
+        }
+      },
+      "title": "ScoreWeightedConfig",
+      "type": "object"
+    },
+    "SelectionConfig": {
+      "description": "How stocks are selected from scored universe.",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/SelectionMethod",
+          "default": "top_n"
+        },
+        "n": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Number of stocks for top_n",
+          "title": "N"
+        },
+        "pct": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Fraction for top_pct",
+          "title": "Pct"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Score threshold",
+          "title": "Threshold"
+        },
+        "min_names": {
+          "default": 5,
+          "minimum": 1,
+          "title": "Min Names",
+          "type": "integer"
+        },
+        "max_names": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Names"
+        },
+        "score_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "node_id of score in node_graph",
+          "title": "Score Ref"
+        }
+      },
+      "title": "SelectionConfig",
+      "type": "object"
+    },
+    "SelectionMethod": {
+      "enum": [
+        "top_n",
+        "top_pct",
+        "threshold",
+        "all_positive",
+        "optimizer_only"
+      ],
+      "title": "SelectionMethod",
+      "type": "string"
+    },
+    "SleeveConfig": {
+      "description": "A sleeve is a self-contained sub-strategy.\nFinal portfolio = weighted sum of sleeves.",
+      "properties": {
+        "sleeve_id": {
+          "description": "Unique sleeve ID within the strategy",
+          "title": "Sleeve Id",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "universe_override": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UniverseConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "node_graph": {
+          "$ref": "#/$defs/NodeGraph"
+        },
+        "score_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "node_id of the final score in node_graph",
+          "title": "Score Ref"
+        },
+        "selection": {
+          "$ref": "#/$defs/SelectionConfig"
+        },
+        "allocator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EqualWeightConfig"
+            },
+            {
+              "$ref": "#/$defs/ScoreWeightedConfig"
+            },
+            {
+              "$ref": "#/$defs/InverseVolConfig"
+            },
+            {
+              "$ref": "#/$defs/MeanVarianceConfig"
+            },
+            {
+              "$ref": "#/$defs/BenchmarkTrackingConfig"
+            },
+            {
+              "$ref": "#/$defs/EnhancedIndexConfig"
+            },
+            {
+              "$ref": "#/$defs/RiskBudgetConfig"
+            }
+          ],
+          "title": "Allocator"
+        },
+        "constraints": {
+          "$ref": "#/$defs/ConstraintSet"
+        },
+        "active_condition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "node_id of boolean node; sleeve active only when True",
+          "title": "Active Condition"
+        }
+      },
+      "required": [
+        "sleeve_id"
+      ],
+      "title": "SleeveConfig",
+      "type": "object"
+    },
+    "SleeveMixMethod": {
+      "enum": [
+        "fixed_mix",
+        "regime_switch",
+        "score_based_mix"
+      ],
+      "title": "SleeveMixMethod",
+      "type": "string"
+    },
+    "TsOpNode": {
+      "description": "Time-series operation on a single input.",
+      "properties": {
+        "node_id": {
+          "description": "Unique node identifier within this graph",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "null_policy": {
+          "$ref": "#/$defs/NullPolicy",
+          "default": "drop"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "type": {
+          "const": "ts_op",
+          "default": "ts_op",
+          "title": "Type",
+          "type": "string"
+        },
+        "op": {
+          "description": "lag/sma/ema/std/mean/zscore/rank/percentile",
+          "title": "Op",
+          "type": "string"
+        },
+        "input": {
+          "description": "node_id of input",
+          "title": "Input",
+          "type": "string"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "node_id",
+        "op",
+        "input"
+      ],
+      "title": "TsOpNode",
+      "type": "object"
+    },
+    "UniverseConfig": {
+      "description": "Universe selection configuration.",
+      "properties": {
+        "base": {
+          "default": "is_eligible",
+          "description": "Base universe filter",
+          "title": "Base",
+          "type": "string"
+        },
+        "markets": {
+          "description": "Allowed market types",
+          "items": {
+            "type": "string"
+          },
+          "title": "Markets",
+          "type": "array"
+        },
+        "min_mcap_bn": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Min market cap in billions KRW (overrides base)",
+          "title": "Min Mcap Bn"
+        },
+        "min_adv5_bn": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Min 5-day ADV in billions KRW (overrides base)",
+          "title": "Min Adv5 Bn"
+        },
+        "include_blocked": {
+          "default": false,
+          "description": "Include non-eligible stocks (research only)",
+          "title": "Include Blocked",
+          "type": "boolean"
+        },
+        "custom_filter_node": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "node_id of boolean filter in sleeve graph",
+          "title": "Custom Filter Node"
+        },
+        "extra_fields": {
+          "description": "Additional DB fields to load",
+          "items": {
+            "type": "string"
+          },
+          "title": "Extra Fields",
+          "type": "array"
+        }
+      },
+      "title": "UniverseConfig",
+      "type": "object"
+    }
+  },
+  "description": "Unified Strategy IR — the single representation of any quant strategy.\n\nThis IR supports:\n- cross-sectional ranking / momentum / value / multi-factor strategies\n- benchmark tracking and enhanced indexing\n- regime switching\n- multi-sleeve portfolio construction\n- contest-mode constraint enforcement\n\nThe IR is intentionally strategy-type-agnostic.\nStrategy 'type' is determined by the combination of allocator and node graph,\nnot by a type field.",
+  "properties": {
+    "version": {
+      "default": "1.0",
+      "description": "IR schema version",
+      "title": "Version",
+      "type": "string"
+    },
+    "strategy_id": {
+      "description": "Unique strategy identifier",
+      "title": "Strategy Id",
+      "type": "string"
+    },
+    "strategy_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Strategy Name"
+    },
+    "mode": {
+      "$ref": "#/$defs/RunMode",
+      "default": "research"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "objective": {
+      "default": "maximize_return",
+      "description": "Human-readable objective: maximize_return / minimize_te / enhanced_index / etc.",
+      "title": "Objective",
+      "type": "string"
+    },
+    "date_range": {
+      "$ref": "#/$defs/DateRange"
+    },
+    "base_universe": {
+      "$ref": "#/$defs/UniverseConfig"
+    },
+    "benchmark": {
+      "$ref": "#/$defs/BenchmarkConfig"
+    },
+    "sleeves": {
+      "description": "At least one sleeve required",
+      "items": {
+        "$ref": "#/$defs/SleeveConfig"
+      },
+      "minItems": 1,
+      "title": "Sleeves",
+      "type": "array"
+    },
+    "portfolio_aggregation": {
+      "$ref": "#/$defs/PortfolioAggregation"
+    },
+    "rebalancing": {
+      "$ref": "#/$defs/RebalancingConfig"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionConfig"
+    },
+    "reporting": {
+      "$ref": "#/$defs/ReportingConfig"
+    },
+    "run_overrides": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunOverrides"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    }
+  },
+  "required": [
+    "strategy_id",
+    "date_range",
+    "sleeves"
+  ],
+  "title": "StrategyIR",
+  "type": "object"
+}

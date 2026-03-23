@@ -1,0 +1,175 @@
+# ============================================================
+# DART Backtest DB - Configuration
+# ============================================================
+# Copy this file to config.yaml and adjust paths as needed.
+# All paths are relative to the project root (db/) unless absolute.
+
+# ----------------------------------------------------------
+# Paths
+# ----------------------------------------------------------
+paths:
+  # Root of the raw data directory (sibling of db/)
+  raw_root: "../raw"
+
+  # Output database file (relative to db/)
+  db_file: "data/db/backtest.db"
+
+  # Artifacts directory for logs, reports, manifests
+  artifacts_dir: "artifacts"
+
+  # Kind source files (relative to raw_root/kind/)
+  kind:
+    listed_companies:   "kind/상장법인목록.xls"
+    delistings:         "kind/상장폐지현황.xls"
+    ipos:               "kind/신규상장기업현황.xls"
+    stock_issuance:     "kind/주식발행내역.xls"
+    investment_caution: "kind/투자주의종목.xls"
+    investment_warning: "kind/투자경고종목.xls"
+    investment_risk:    "kind/투자위험종목.xls"
+
+  # Sector file (exact file, do not substitute)
+  sector_file: "sector/sector allocation_filled_reprocessed.xlsx"
+
+  # DataGuide file
+  dataguide_file: "dataguide.xlsx"
+
+# ----------------------------------------------------------
+# DataGuide sheet configuration
+# ----------------------------------------------------------
+dataguide:
+  # Sheet names
+  sheet_index_daily:       "bm"       # KOSPI/KOSPI200/KOSDAQ/KRX300 daily OHLC
+  sheet_stock_daily:       "type1"    # ~4097 stock daily fields
+  sheet_financials_quarterly: "type2" # quarterly financial data
+
+  # Row index (0-based) of the data header row in each sheet
+  # All three sheets share the same metadata structure: header at row 8
+  header_row_index: 8
+
+  # For type2 (financials), the year label row is one row above the header
+  year_label_row_index: 7
+
+  # Meta columns (0-based index range, inclusive) before date/period columns
+  # Cols 0-5 are metadata: code, corp_name, fiscal_month, type, item_code, item_name
+  # Col 6 is a visual separator ('분기') - skip it
+  meta_col_count: 6
+  skip_col_index: 6  # '분기' separator column in type2
+
+  # Index code mapping
+  index_code_map:
+    "I.001": "KOSPI"
+    "I.101": "KOSPI200"
+    "I.201": "KOSDAQ"
+    "I.405": "KRX300"
+
+  # Stock daily item name mapping (Korean source name -> English field name)
+  stock_item_map:
+    "시가(원)":           "open"
+    "고가(원)":           "high"
+    "저가(원)":           "low"
+    "종가(원)":           "close"
+    "수정시가(원)":       "adj_open"
+    "수정고가(원)":       "adj_high"
+    "수정저가(원)":       "adj_low"
+    "수정주가(원)":       "adj_close"
+    "수정계수":           "adj_factor"
+    "거래량(주)":         "volume"
+    "거래대금(원)":       "traded_value"
+    "상장주식수(주)":     "shares_outstanding"
+    "시가총액(원)":       "market_cap"
+    "거래정지구분":       "trading_halt_flag"
+    "관리감리구분":       "admin_supervision_flag"
+    "유동주식수(주)":     "float_shares"
+    "유동주식비율(%)":    "float_ratio"
+
+  # Index daily item name mapping
+  index_item_map:
+    "시가지수(포인트)":   "open"
+    "고가지수(포인트)":   "high"
+    "저가지수(포인트)":   "low"
+    "종가지수(포인트)":   "close"
+
+  # Financial item name mapping (Korean -> English)
+  financial_item_map:
+    "자산총계(천원)":                     "total_assets"
+    "부채총계(천원)":                     "total_liabilities"
+    "자본총계(지배)(천원)":               "total_equity_parent"
+    "매출액(천원)":                       "sales"
+    "매출원가(천원)":                     "cogs"
+    "영업이익(천원)":                     "operating_income"
+    "당기순이익(지배)(천원)":             "net_income_parent"
+    "영업활동으로인한현금흐름(천원)":     "operating_cash_flow"
+    "현금및현금성자산(천원)":             "cash_and_cash_equivalents"
+    "*총금융부채(천원)":                  "total_financial_debt"
+
+# ----------------------------------------------------------
+# Point-in-time financial availability lag policy
+# ----------------------------------------------------------
+# Conservative lag (in days) added to period_end to derive available_date.
+# This prevents look-ahead bias for financial data.
+# Assumption: companies file financial statements within these windows.
+# Q1/Q2/Q3 are interim reports (45 days); Q4 is full-year audit (90 days).
+# Reference: Korean DART filing regulations (사업보고서/분기보고서)
+financial_lag:
+  q1_days: 45
+  q2_days: 45
+  q3_days: 45
+  q4_days: 90
+
+# ----------------------------------------------------------
+# Universe eligibility thresholds
+# ----------------------------------------------------------
+eligibility:
+  # Minimum 5-day average traded value (KRW)
+  min_adv5_krw: 3_000_000_000     # 3 billion KRW
+
+  # Minimum market cap (KRW)
+  min_mcap_krw: 100_000_000_000   # 100 billion KRW
+
+  # Minimum listing age in business days before a stock is eligible
+  min_listing_age_bd: 6
+
+  # Eligible markets (others will be blocked)
+  eligible_markets:
+    - "코스피"
+    - "코스닥"
+
+  # EXCLUDED RULE (missing data):
+  # investment caution watchlist (투자주의환기종목) is NOT implemented.
+  # TODO: Add investment_caution_watchlist_file to paths and implement
+  #       is_not_caution_watchlist flag in eligibility when data becomes available.
+
+# ----------------------------------------------------------
+# Sector taxonomy
+# ----------------------------------------------------------
+sector:
+  # Taxonomy level label (for meta_dataset_coverage)
+  taxonomy_level: "11-sector-RFM-contest"
+
+  # Allowed sector values (if a row has any other value, it is rejected)
+  allowed_values:
+    - "정보기술"
+    - "산업"
+    - "임의소비재"
+    - "헬스케어"
+    - "소재"
+    - "필수소비재"
+    - "커뮤니케이션"
+    - "금융"
+    - "에너지"
+    - "유틸리티"
+    - "부동산"
+
+# ----------------------------------------------------------
+# Build options
+# ----------------------------------------------------------
+build:
+  # Batch size for SQLite inserts (tune for memory vs speed)
+  insert_batch_size: 50000
+
+  # If true, skip re-ingestion of a file if its SHA-256 checksum
+  # matches the previously recorded value in raw_build_manifest.
+  skip_if_unchanged: true
+
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"

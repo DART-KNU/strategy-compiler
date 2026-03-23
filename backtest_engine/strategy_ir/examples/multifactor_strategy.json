@@ -1,0 +1,150 @@
+{
+  "version": "1.0",
+  "strategy_id": "multifactor_composite",
+  "strategy_name": "Multi-Factor Composite (Quality + Value + Momentum)",
+  "mode": "research",
+  "description": "Combines quality (operating margin), value (inverse PB proxy), and momentum (3M return) into a composite score. Score-weighted allocation, 30 stocks, monthly rebalancing.",
+  "objective": "maximize_return",
+  "date_range": {
+    "start": "2022-01-01",
+    "end": "2025-12-31"
+  },
+  "base_universe": {
+    "base": "is_eligible",
+    "markets": ["코스피", "코스닥"],
+    "include_blocked": false
+  },
+  "benchmark": {
+    "index_code": "KOSPI200",
+    "proxy_type": "return_proxy"
+  },
+  "sleeves": [
+    {
+      "sleeve_id": "quality_momentum",
+      "description": "Quality + Momentum blend",
+      "node_graph": {
+        "nodes": {
+          "momentum_raw": {
+            "node_id": "momentum_raw",
+            "type": "field",
+            "field_id": "ret_60d",
+            "lag": 0,
+            "null_policy": "drop"
+          },
+          "momentum_cs": {
+            "node_id": "momentum_cs",
+            "type": "cs_op",
+            "op": "rank",
+            "input": "momentum_raw",
+            "null_policy": "drop"
+          },
+          "sales_growth": {
+            "node_id": "sales_growth",
+            "type": "field",
+            "field_id": "sales_growth_yoy",
+            "lag": 0,
+            "null_policy": "drop"
+          },
+          "quality_cs": {
+            "node_id": "quality_cs",
+            "type": "cs_op",
+            "op": "rank",
+            "input": "sales_growth",
+            "null_policy": "drop"
+          },
+          "net_debt": {
+            "node_id": "net_debt",
+            "type": "field",
+            "field_id": "net_debt_to_equity",
+            "lag": 0,
+            "null_policy": "drop"
+          },
+          "low_leverage": {
+            "node_id": "low_leverage",
+            "type": "combine",
+            "op": "negate",
+            "inputs": ["net_debt"],
+            "null_policy": "drop"
+          },
+          "leverage_cs": {
+            "node_id": "leverage_cs",
+            "type": "cs_op",
+            "op": "rank",
+            "input": "low_leverage",
+            "null_policy": "drop"
+          },
+          "composite_score": {
+            "node_id": "composite_score",
+            "type": "combine",
+            "op": "weighted_sum",
+            "inputs": ["momentum_cs", "quality_cs", "leverage_cs"],
+            "params": {"weights": [0.40, 0.35, 0.25]},
+            "null_policy": "drop"
+          },
+          "sector_neutral_score": {
+            "node_id": "sector_neutral_score",
+            "type": "cs_op",
+            "op": "sector_neutralize",
+            "input": "composite_score",
+            "params": {"method": "zscore"},
+            "null_policy": "drop"
+          }
+        },
+        "output": "sector_neutral_score"
+      },
+      "score_ref": "sector_neutral_score",
+      "selection": {
+        "method": "top_n",
+        "n": 30,
+        "min_names": 15
+      },
+      "allocator": {
+        "type": "score_weighted",
+        "power": 1.5,
+        "clip_negative": true
+      },
+      "constraints": {
+        "long_only": true,
+        "fully_invested": true,
+        "max_weight": 0.10,
+        "min_weight": 0.0,
+        "min_names": 15,
+        "target_cash_weight": 0.005,
+        "max_sector_multiplier": 3.0
+      }
+    }
+  ],
+  "portfolio_aggregation": {
+    "method": "fixed_mix",
+    "sleeve_weights": {"quality_momentum": 1.0},
+    "normalize": true,
+    "final_constraints": {
+      "long_only": true,
+      "max_weight": 0.10,
+      "min_names": 15,
+      "target_cash_weight": 0.005
+    },
+    "global_node_graph": {"nodes": {}, "output": null}
+  },
+  "rebalancing": {
+    "frequency": "monthly",
+    "day_of_month": 1,
+    "look_ahead_buffer": 1
+  },
+  "execution": {
+    "fill_rule": "next_open",
+    "commission_bps": 10.0,
+    "sell_tax_bps": 20.0,
+    "slippage_bps": 10.0,
+    "initial_capital": 1000000000,
+    "round_lot": 1
+  },
+  "reporting": {
+    "charts": ["nav", "drawdown", "turnover", "sector_exposure", "sleeve_attribution"],
+    "tables": ["summary_metrics", "monthly_returns", "top_holdings", "top_trades", "constraint_violations"],
+    "top_n_holdings": 20,
+    "top_n_trades": 20,
+    "annualization_factor": 252
+  },
+  "tags": ["multifactor", "quality", "momentum", "sector-neutral", "long-only"]
+}
