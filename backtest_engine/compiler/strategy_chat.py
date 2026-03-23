@@ -116,10 +116,32 @@ CS 정규화 (섹터중립 zscore):
 }}, "output": "score"}}
 ```
 
+52주 신고가 + 거래대금 필터 (predicate + condition 사용):
+```json
+{{"nodes": {{
+  "raw52":    {{"node_id": "raw52",    "type": "field",     "field_id": "price_to_52w_high"}},
+  "one":      {{"node_id": "one",      "type": "constant",  "value": 1.0}},
+  "is_high":  {{"node_id": "is_high",  "type": "predicate", "op": "gte", "inputs": ["raw52", "one"]}},
+  "vol":      {{"node_id": "vol",      "type": "field",     "field_id": "adv5"}},
+  "vol_rank": {{"node_id": "vol_rank", "type": "cs_op",     "op": "rank", "input": "vol"}},
+  "zero":     {{"node_id": "zero",     "type": "constant",  "value": 0.0}},
+  "score":    {{"node_id": "score",    "type": "condition", "condition": "is_high",
+               "true_branch": "vol_rank", "false_branch": "zero"}}
+}}, "output": "score"}}
+```
+
+## ⚠️ 유효한 node type 목록 — 반드시 이 목록만 사용
+`field` / `constant` / `benchmark_ref` / `ts_op` / `cs_op` / `combine` / `predicate` / `condition`
+
+**`compare`는 존재하지 않습니다.** 비교 연산은 반드시 `predicate` 노드를 사용하세요.
+- `predicate` inputs에는 **반드시 두 Series 노드**의 node_id를 넣어야 합니다.
+- 상수와 비교할 때는 `{{"type": "constant", "value": 숫자}}` 노드를 먼저 만들고 그 node_id를 inputs에 사용하세요.
+
 ## 사용 가능한 field_id
 수익률: ret_1d, ret_5d, ret_20d, ret_60d
 변동성/유동성: vol_20d, adv5, adv20, turnover_ratio
 가격: close, adj_close, open, high, low, volume, market_cap
+가격 파생: price_to_52w_high  ← close / 52주 고점. 1.0=52주 신고가. 1.0 이상이면 신고가 돌파
 퀄리티: sales_growth_yoy, op_income_growth_yoy, net_debt_to_equity, cash_to_assets
 원시 재무: total_assets, sales, operating_income, net_income_parent
 
