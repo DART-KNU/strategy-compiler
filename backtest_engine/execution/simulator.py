@@ -378,6 +378,11 @@ class ExecutionSimulator:
         selected = apply_max_names_filter(selected, sleeve.constraints.max_names)
 
         if selected.empty:
+            if self._verbose:
+                import sys
+                all_nan = scores is not None and scores.isna().all()
+                reason = "모든 점수가 NaN — node_graph 노드 참조 오류 가능성" if all_nan else "선택된 종목 없음"
+                print(f"  [{signal_date}] sleeve '{sleeve.sleeve_id}' 건너뜀: {reason}", file=sys.stderr)
             return None
 
         # Covariance history (for MV/TE optimizers)
@@ -457,10 +462,17 @@ class ExecutionSimulator:
         fields = set()
         fields.update(["ret_1d", "ret_5d", "ret_20d", "ret_60d", "vol_20d",
                        "market_cap", "adv5", "sector_name"])
+        # Fields referenced by node graph field nodes
         for sleeve in self._strategy.sleeves:
             for node in sleeve.node_graph.nodes.values():
                 if node.type == "field":
                     fields.add(node.field_id)
+        # extra_fields declared in universe configs
+        if self._strategy.base_universe:
+            fields.update(self._strategy.base_universe.extra_fields or [])
+        for sleeve in self._strategy.sleeves:
+            if sleeve.universe_override:
+                fields.update(sleeve.universe_override.extra_fields or [])
         return list(fields)
 
     def _get_closing_prices(self, trade_date: str) -> Dict[str, float]:

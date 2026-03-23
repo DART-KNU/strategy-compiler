@@ -157,14 +157,18 @@ def _fix_stdout_for_mingw() -> None:
     duplicated.  Switching to newline='\\n' sends bare LF so Mintty renders
     each line exactly once.
     """
-    import io
-    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-        sys.stdout = io.TextIOWrapper(
-            sys.stdout.buffer,
-            encoding=sys.stdout.encoding or "utf-8",
-            line_buffering=True,
-            newline="\n",
-        )
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(newline="\n")  # Python 3.7+
+        except (AttributeError, Exception):
+            import io
+            if hasattr(sys.stdout, "buffer"):
+                sys.stdout = io.TextIOWrapper(
+                    sys.stdout.buffer,
+                    encoding=sys.stdout.encoding or "utf-8",
+                    line_buffering=True,
+                    newline="\n",
+                )
 
 
 def main() -> None:
