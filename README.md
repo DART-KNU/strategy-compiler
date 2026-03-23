@@ -24,6 +24,60 @@ Natural Language  →  Draft IR  →  Validated IR  →  Backtest  →  Report B
 
 ---
 
+## 설치 및 실행
+
+### 1. 저장소 클론
+
+```bash
+git clone https://github.com/DART-KNU/strategy-compiler.git
+cd strategy-compiler
+```
+
+### 2. DB 다운로드
+
+백테스트 DB(9.6 GB)는 별도로 공유됩니다.
+
+**[📥 backtest.db 다운로드 (Google Drive)](https://drive.google.com/file/d/1KY1NYZKzGbODoa8XxkKS7VCJ7Bf6RPz1/view?usp=sharing)**
+
+다운로드 후 아래 경로에 배치하세요:
+
+```
+strategy-compiler/
+└── database/
+    └── db/
+        └── data/
+            └── db/
+                └── backtest.db   ← 여기
+```
+
+### 3. 가상환경 생성 및 패키지 설치
+
+```bash
+# Windows (PowerShell / Git Bash)
+python -m venv .venv
+source .venv/Scripts/activate   # Git Bash
+# .venv\Scripts\activate        # PowerShell
+
+pip install -r requirements.txt
+```
+
+### 4. OpenAI API 키 설정
+
+```bash
+cp .env.example .env
+# .env 파일을 열어 OPENAI_API_KEY=sk-... 입력
+```
+
+### 5. 대화형 전략 설계 실행
+
+```bash
+python -m backtest_engine.api.chat \
+  --db database/db/data/db/backtest.db \
+  --out runs/
+```
+
+---
+
 ## Quick Start
 
 ### 1. Run a backtest
