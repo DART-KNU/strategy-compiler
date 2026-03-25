@@ -245,6 +245,11 @@ TS_OPS = {
     "percentile": ts_percentile,
 }
 
+def cs_neg(s: pd.Series) -> pd.Series:
+    """Cross-sectional negation (flip sign)."""
+    return -s
+
+
 CS_OPS = {
     "rank": cs_rank,
     "zscore": cs_zscore,
@@ -252,6 +257,8 @@ CS_OPS = {
     "winsorize": cs_winsorize,
     "sector_neutralize": cs_sector_neutralize,
     "vol_scale": cs_vol_scale,
+    "neg": cs_neg,
+    "negate": cs_neg,
 }
 
 COMBINE_OPS = {

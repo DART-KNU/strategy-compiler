@@ -28,15 +28,15 @@ _SYSTEM_PROMPT_TEMPLATE = """\
 
 ## 전략 IR 구조 (draft_ir 형식)
 
-동일가중 예시:
+동일가중 예시 (월간 리밸런싱):
 ```json
 {{
   "strategy_id": "my_strategy",
   "date_range": {{"start": "2023-03-18", "end": "2026-03-20"}},
-  "rebalance_frequency": "monthly",
+  "rebalancing": {{"frequency": "monthly", "day_of_month": 1}},
   "mode": "research",
   "benchmark": {{"index_code": "KOSPI200"}},
-  "initial_capital": 1000000000,
+  "execution": {{"fill_rule": "next_open", "commission_bps": 10, "slippage_bps": 10, "initial_capital": 1000000000}},
   "sleeves": [{{
     "sleeve_id": "main",
     "node_graph": {{
@@ -45,9 +45,15 @@ _SYSTEM_PROMPT_TEMPLATE = """\
     }},
     "selection": {{"method": "top_n", "n": 20}},
     "allocator": {{"type": "equal_weight"}},
-    "constraints": {{"max_weight": 0.15, "target_cash_weight": 0.005}},
-    "execution": {{"fill_rule": "next_open", "commission_bps": 10, "slippage_bps": 10}}
+    "constraints": {{"max_weight": 0.15, "target_cash_weight": 0.005}}
   }}]
+}}
+```
+
+주간 리밸런싱 예시 (매주 월요일):
+```json
+{{
+  "rebalancing": {{"frequency": "weekly", "day_of_week": 0}}
 }}
 ```
 
@@ -56,10 +62,10 @@ _SYSTEM_PROMPT_TEMPLATE = """\
 {{
   "strategy_id": "mv_strategy",
   "date_range": {{"start": "2023-03-18", "end": "2026-03-20"}},
-  "rebalance_frequency": "monthly",
+  "rebalancing": {{"frequency": "monthly", "day_of_month": 1}},
   "mode": "research",
   "benchmark": {{"index_code": "KOSPI200"}},
-  "initial_capital": 1000000000,
+  "execution": {{"fill_rule": "next_open", "commission_bps": 10, "slippage_bps": 10, "initial_capital": 1000000000}},
   "sleeves": [{{
     "sleeve_id": "main",
     "node_graph": {{
@@ -74,8 +80,7 @@ _SYSTEM_PROMPT_TEMPLATE = """\
       "cov_model": "shrinkage_cov",
       "alpha_ref": "score"
     }},
-    "constraints": {{"max_weight": 0.15, "target_cash_weight": 0.005}},
-    "execution": {{"fill_rule": "next_open", "commission_bps": 10, "slippage_bps": 10}}
+    "constraints": {{"max_weight": 0.15, "target_cash_weight": 0.005}}
   }}]
 }}
 ```
@@ -104,15 +109,18 @@ CS 정규화 (섹터중립 zscore):
 }}, "output": "score"}}
 ```
 
-멀티팩터 합성:
+멀티팩터 합성 (저변동성 포함 — neg 사용):
 ```json
 {{"nodes": {{
-  "mom": {{"node_id": "mom", "type": "field", "field_id": "ret_60d"}},
-  "qual": {{"node_id": "qual", "type": "field", "field_id": "op_income_growth_yoy"}},
-  "mom_z": {{"node_id": "mom_z", "type": "cs_op", "op": "zscore", "input": "mom"}},
-  "qual_z": {{"node_id": "qual_z", "type": "cs_op", "op": "zscore", "input": "qual"}},
-  "score": {{"node_id": "score", "type": "combine", "op": "weighted_sum",
-             "inputs": ["mom_z", "qual_z"], "weights": [0.6, 0.4]}}
+  "mom":    {{"node_id": "mom",    "type": "field",  "field_id": "ret_60d"}},
+  "qual":   {{"node_id": "qual",   "type": "field",  "field_id": "op_income_growth_yoy"}},
+  "vol":    {{"node_id": "vol",    "type": "field",  "field_id": "vol_20d"}},
+  "mom_z":  {{"node_id": "mom_z",  "type": "cs_op",  "op": "zscore", "input": "mom"}},
+  "qual_z": {{"node_id": "qual_z", "type": "cs_op",  "op": "zscore", "input": "qual"}},
+  "vol_z":  {{"node_id": "vol_z",  "type": "cs_op",  "op": "zscore", "input": "vol"}},
+  "vol_neg":{{"node_id": "vol_neg","type": "cs_op",  "op": "neg",    "input": "vol_z"}},
+  "score":  {{"node_id": "score",  "type": "combine", "op": "weighted_sum",
+             "inputs": ["qual_z", "mom_z", "vol_neg"], "weights": [0.333, 0.333, 0.334]}}
 }}, "output": "score"}}
 ```
 
@@ -134,6 +142,16 @@ CS 정규화 (섹터중립 zscore):
 `field` / `constant` / `benchmark_ref` / `ts_op` / `cs_op` / `combine` / `predicate` / `condition`
 
 **`compare`는 존재하지 않습니다.** 비교 연산은 반드시 `predicate` 노드를 사용하세요.
+
+### cs_op 사용 가능한 op 목록
+`rank` / `zscore` / `percentile` / `winsorize` / `sector_neutralize` / `vol_scale` / `neg` / `negate`
+
+- `neg` / `negate`: 부호 반전 (저변동성 팩터를 높은 점수로 바꿀 때 사용)
+- `sector_neutralize`: params에 `"method": "demean"` 또는 `"zscore"` 지정 가능
+- 위 목록에 없는 op는 절대 사용하지 마세요.
+
+### combine op 사용 가능한 op 목록
+`add` / `sub` / `mul` / `div` / `weighted_sum` / `negate` / `abs` / `clip` / `winsorize`
 - `predicate` inputs에는 **반드시 두 Series 노드**의 node_id를 넣어야 합니다.
 - 상수와 비교할 때는 `{{"type": "constant", "value": 숫자}}` 노드를 먼저 만들고 그 node_id를 inputs에 사용하세요.
 

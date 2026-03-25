@@ -65,6 +65,14 @@ class Normalizer:
         """
         d = deepcopy(draft)
 
+        # Normalize rebalance_frequency shorthand → rebalancing.frequency
+        # Must run BEFORE defaults injection so frequency isn't overwritten
+        if "rebalance_frequency" in d:
+            freq_val = d.pop("rebalance_frequency")
+            if "rebalancing" not in d:
+                d["rebalancing"] = {"frequency": freq_val}
+            # else: rebalancing already present, ignore shorthand
+
         # Inject top-level defaults
         for k, v in self.DEFAULTS.items():
             if k not in d:
