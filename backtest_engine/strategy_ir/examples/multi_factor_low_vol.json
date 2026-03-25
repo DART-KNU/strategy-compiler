@@ -1,0 +1,128 @@
+{
+  "version": "1.0",
+  "strategy_id": "multi_factor_low_vol",
+  "strategy_name": "Multi-Factor Low Vol (Quality + Momentum + Low Vol)",
+  "mode": "research",
+  "description": "Combines quality (op_income_growth_yoy), momentum (ret_60d), and LOW volatility (vol_20d negated) into a composite score. Equal-weight, 20 stocks, monthly rebalancing. Key: vol_neg = cs_op neg on vol_z, so LOW volatility scores HIGH.",
+  "objective": "maximize_return",
+  "date_range": {
+    "start": "2023-03-18",
+    "end": "2026-03-20"
+  },
+  "base_universe": {
+    "base": "is_eligible",
+    "markets": ["코스피", "코스닥"],
+    "include_blocked": false
+  },
+  "benchmark": {
+    "index_code": "KOSPI200",
+    "proxy_type": "return_proxy"
+  },
+  "sleeves": [
+    {
+      "sleeve_id": "main",
+      "description": "Quality + Momentum + Low Vol composite",
+      "node_graph": {
+        "nodes": {
+          "mom": {
+            "node_id": "mom",
+            "type": "field",
+            "field_id": "ret_60d",
+            "lag": 0,
+            "null_policy": "drop"
+          },
+          "qual": {
+            "node_id": "qual",
+            "type": "field",
+            "field_id": "op_income_growth_yoy",
+            "lag": 0,
+            "null_policy": "drop"
+          },
+          "vol": {
+            "node_id": "vol",
+            "type": "field",
+            "field_id": "vol_20d",
+            "lag": 0,
+            "null_policy": "drop"
+          },
+          "mom_z": {
+            "node_id": "mom_z",
+            "type": "cs_op",
+            "op": "zscore",
+            "input": "mom",
+            "null_policy": "drop"
+          },
+          "qual_z": {
+            "node_id": "qual_z",
+            "type": "cs_op",
+            "op": "zscore",
+            "input": "qual",
+            "null_policy": "drop"
+          },
+          "vol_z": {
+            "node_id": "vol_z",
+            "type": "cs_op",
+            "op": "zscore",
+            "input": "vol",
+            "null_policy": "drop"
+          },
+          "vol_neg": {
+            "node_id": "vol_neg",
+            "type": "cs_op",
+            "op": "neg",
+            "input": "vol_z",
+            "null_policy": "drop"
+          },
+          "score": {
+            "node_id": "score",
+            "type": "combine",
+            "op": "weighted_sum",
+            "inputs": ["qual_z", "mom_z", "vol_neg"],
+            "params": {"weights": [0.333, 0.333, 0.334]},
+            "null_policy": "drop"
+          }
+        },
+        "output": "score"
+      },
+      "selection": {
+        "method": "top_n",
+        "n": 20,
+        "min_names": 10
+      },
+      "allocator": {
+        "type": "equal_weight"
+      },
+      "constraints": {
+        "long_only": true,
+        "fully_invested": true,
+        "max_weight": 0.15,
+        "min_weight": 0.0,
+        "min_names": 10,
+        "target_cash_weight": 0.005
+      }
+    }
+  ],
+  "portfolio_aggregation": {
+    "method": "fixed_mix",
+    "sleeve_weights": {"main": 1.0},
+    "normalize": true
+  },
+  "rebalancing": {
+    "frequency": "monthly",
+    "day_of_month": 1,
+    "look_ahead_buffer": 1
+  },
+  "execution": {
+    "fill_rule": "next_open",
+    "commission_bps": 10.0,
+    "sell_tax_bps": 20.0,
+    "slippage_bps": 10.0,
+    "initial_capital": 1000000000,
+    "round_lot": 1
+  },
+  "reporting": {
+    "charts": ["nav", "drawdown", "turnover", "sector_exposure"],
+    "tables": ["summary_metrics", "monthly_returns", "top_holdings", "top_trades"]
+  },
+  "tags": ["multifactor", "low-vol", "quality", "momentum", "long-only"]
+}
