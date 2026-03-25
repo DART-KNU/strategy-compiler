@@ -58,6 +58,7 @@ class NodeGraphExecutor:
         self._history_window = history_window
         self._ts_cache: Dict[str, pd.DataFrame] = {}   # field_id -> (date x ticker)
         self._index_cache: Dict[str, pd.DataFrame] = {}
+        self._current_nodes: Dict[str, Any] = {}  # node_id -> NodeDef, set during evaluate
 
     def evaluate(self, graph: NodeGraph) -> Optional[pd.Series]:
         """
@@ -68,6 +69,7 @@ class NodeGraphExecutor:
         if not graph.nodes:
             return None
 
+        self._current_nodes = graph.nodes
         order = self._topo_sort(graph)
         values: Dict[str, pd.Series] = {}
 
@@ -85,6 +87,7 @@ class NodeGraphExecutor:
         """Evaluate graph and return dict of all node outputs."""
         if not graph.nodes:
             return {}
+        self._current_nodes = graph.nodes
         order = self._topo_sort(graph)
         values: Dict[str, pd.Series] = {}
         for node_id in order:
@@ -219,6 +222,9 @@ class NodeGraphExecutor:
         # Apply op to each ticker column
         if op_name == "lag":
             result_df = hist.shift(window)
+        elif op_name == "downside_std":
+            mar = node.params.get("mar", 0.0)
+            result_df = hist.apply(lambda col: op_fn(col, window, mar=mar))
         else:
             result_df = hist.apply(lambda col: op_fn(col, window))
 
@@ -245,10 +251,16 @@ class NodeGraphExecutor:
         if node_id_or_field in self._ts_cache:
             return self._ts_cache[node_id_or_field]
 
-        # Determine the field to load
+        # Determine the field to load.
+        # node_id_or_field may be a raw field_id OR a node_id that wraps a field node.
         field_id = None
         if node_id_or_field in FIELD_REGISTRY:
             field_id = node_id_or_field
+        elif node_id_or_field in self._current_nodes:
+            # Resolve through the graph: if the input node is a field node, use its field_id
+            input_node = self._current_nodes[node_id_or_field]
+            if input_node.type == "field" and input_node.field_id in FIELD_REGISTRY:
+                field_id = input_node.field_id
 
         if field_id is None:
             # Can't get history for computed nodes — return snapshot value repeated

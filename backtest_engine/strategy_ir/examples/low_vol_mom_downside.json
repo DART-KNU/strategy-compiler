@@ -1,0 +1,110 @@
+{
+  "version": "1.0",
+  "strategy_id": "low_vol_mom_downside",
+  "strategy_name": "Low Vol + 3M Momentum + Downside Risk",
+  "mode": "contest",
+  "date_range": {
+    "start": "2023-03-18",
+    "end": "2026-03-20"
+  },
+  "rebalancing": {
+    "frequency": "weekly",
+    "day_of_week": 0
+  },
+  "sleeves": [
+    {
+      "sleeve_id": "main",
+      "node_graph": {
+        "nodes": {
+          "ret": {
+            "node_id": "ret",
+            "type": "field",
+            "field_id": "ret_1d"
+          },
+          "vol": {
+            "node_id": "vol",
+            "type": "field",
+            "field_id": "vol_20d"
+          },
+          "mom": {
+            "node_id": "mom",
+            "type": "field",
+            "field_id": "ret_60d"
+          },
+          "dd_raw": {
+            "node_id": "dd_raw",
+            "type": "ts_op",
+            "op": "downside_std",
+            "input": "ret",
+            "window": 20,
+            "params": {
+              "mar": 0.0
+            }
+          },
+          "vol_z": {
+            "node_id": "vol_z",
+            "type": "cs_op",
+            "op": "zscore",
+            "input": "vol"
+          },
+          "vol_neg": {
+            "node_id": "vol_neg",
+            "type": "cs_op",
+            "op": "neg",
+            "input": "vol_z"
+          },
+          "mom_z": {
+            "node_id": "mom_z",
+            "type": "cs_op",
+            "op": "zscore",
+            "input": "mom"
+          },
+          "dd_z": {
+            "node_id": "dd_z",
+            "type": "cs_op",
+            "op": "zscore",
+            "input": "dd_raw"
+          },
+          "dd_neg": {
+            "node_id": "dd_neg",
+            "type": "cs_op",
+            "op": "neg",
+            "input": "dd_z"
+          },
+          "score": {
+            "node_id": "score",
+            "type": "combine",
+            "op": "weighted_sum",
+            "inputs": [
+              "vol_neg",
+              "mom_z",
+              "dd_neg"
+            ],
+            "params": {
+              "weights": [
+                0.4,
+                0.3,
+                0.3
+              ]
+            }
+          }
+        },
+        "output": "score"
+      },
+      "selection": {
+        "method": "top_n",
+        "n": 20,
+        "min_names": 10
+      },
+      "allocator": {
+        "type": "equal_weight"
+      },
+      "constraints": {
+        "long_only": true,
+        "fully_invested": true,
+        "max_weight": 0.15,
+        "target_cash_weight": 0.005
+      }
+    }
+  ]
+}

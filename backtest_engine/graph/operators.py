@@ -68,6 +68,20 @@ def ts_percentile(s: pd.Series, window: int) -> pd.Series:
     return ts_rank(s, window)
 
 
+def ts_downside_std(s: pd.Series, window: int, mar: float = 0.0) -> pd.Series:
+    """Rolling downside deviation (semi-deviation) below MAR.
+
+    Only returns below `mar` contribute. Result is sqrt(mean(min(r-mar,0)^2)).
+    Typically applied to ret_1d with mar=0.0 (zero return threshold).
+    """
+    def _dd(x: np.ndarray) -> float:
+        below = x[x < mar]
+        if len(below) < 2:
+            return np.nan
+        return float(np.sqrt(np.mean(below ** 2)))
+    return s.rolling(window=window, min_periods=max(2, window // 2)).apply(_dd, raw=True)
+
+
 # ============================================================
 # Cross-sectional operators
 # ============================================================
@@ -271,6 +285,7 @@ TS_OPS = {
     "zscore": ts_zscore,
     "rank": ts_rank,
     "percentile": ts_percentile,
+    "downside_std": ts_downside_std,
 }
 
 def cs_neg(s: pd.Series) -> pd.Series:

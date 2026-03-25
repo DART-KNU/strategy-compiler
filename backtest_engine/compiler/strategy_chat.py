@@ -124,6 +124,29 @@ CS 정규화 (섹터중립 zscore):
 }}, "output": "score"}}
 ```
 
+하락 변동성 (Downside Risk / Downside Deviation) — 파생 팩터 패턴:
+
+`downside_std`는 DB 컬럼이 아닌 **수익률 시계열 파생 팩터**입니다.
+`ts_op` + `field_id: ret_1d` 조합으로 계산합니다.
+낮을수록 좋으므로 반드시 `cs_op neg` 처리가 필요합니다.
+
+```json
+{{"nodes": {{
+  "ret":    {{"node_id": "ret",    "type": "field",   "field_id": "ret_1d"}},
+  "vol":    {{"node_id": "vol",    "type": "field",   "field_id": "vol_20d"}},
+  "mom":    {{"node_id": "mom",    "type": "field",   "field_id": "ret_60d"}},
+  "dd_raw": {{"node_id": "dd_raw", "type": "ts_op",   "op": "downside_std",
+             "input": "ret", "window": 20, "params": {{"mar": 0.0}}}},
+  "vol_z":  {{"node_id": "vol_z",  "type": "cs_op",   "op": "zscore", "input": "vol"}},
+  "vol_neg":{{"node_id": "vol_neg","type": "cs_op",   "op": "neg",    "input": "vol_z"}},
+  "mom_z":  {{"node_id": "mom_z",  "type": "cs_op",   "op": "zscore", "input": "mom"}},
+  "dd_z":   {{"node_id": "dd_z",   "type": "cs_op",   "op": "zscore", "input": "dd_raw"}},
+  "dd_neg": {{"node_id": "dd_neg", "type": "cs_op",   "op": "neg",    "input": "dd_z"}},
+  "score":  {{"node_id": "score",  "type": "combine", "op": "weighted_sum",
+             "inputs": ["vol_neg", "mom_z", "dd_neg"], "weights": [0.40, 0.30, 0.30]}}
+}}, "output": "score"}}
+```
+
 52주 신고가 + 거래대금 필터 (predicate + condition 사용):
 ```json
 {{"nodes": {{
@@ -142,6 +165,14 @@ CS 정규화 (섹터중립 zscore):
 `field` / `constant` / `benchmark_ref` / `ts_op` / `cs_op` / `combine` / `predicate` / `condition`
 
 **`compare`는 존재하지 않습니다.** 비교 연산은 반드시 `predicate` 노드를 사용하세요.
+
+### ts_op 사용 가능한 op 목록
+`lag` / `sma` / `ema` / `std` / `mean` / `zscore` / `rank` / `percentile` / `downside_std`
+
+- `downside_std`: 하락 변동성 (Downside Deviation). 반드시 `field_id: ret_1d` 입력, `window` 지정, `params: {{"mar": 0.0}}` 설정 (MAR=0이 기본값).
+  이 팩터는 DB 컬럼이 아닌 **수익률 시계열 파생 팩터**입니다. raw field 부재 오류 없이 계산됩니다.
+  낮을수록 좋으므로 반드시 `cs_op neg` 처리 필요.
+- 위 목록에 없는 op는 절대 사용하지 마세요.
 
 ### cs_op 사용 가능한 op 목록
 `rank` / `zscore` / `percentile` / `winsorize` / `sector_neutralize` / `vol_scale` / `neg` / `negate`
@@ -234,6 +265,13 @@ CS 정규화 (섹터중립 zscore):
   "strategy_summary": "전략 한줄 요약 (status=ready/confirmed일 때만)"
 }}
 ```
+
+### 슬롯 처리 규칙 — 반드시 준수
+
+1. **단일 입력에서 최대한 추출**: 사용자가 팩터, 가중치, 리밸런싱 주기 등을 한 번에 제공하면 모두 파악한 뒤 **누락된 슬롯만** 질문하세요. 이미 제공된 정보를 재확인하거나 반복 질의하지 마세요.
+   - 나쁜 예: "저변동성 40% 확인했습니다. 3개월 모멘텀 가중치는요?" (사용자가 이미 30%라고 했을 때)
+   - 좋은 예: "팩터 3개, 가중치 모두 확인했습니다. 보유 종목 수는 몇 개로 할까요?"
+2. **한 번에 하나씩만 질문**: 누락 슬롯이 여럿이면 가장 중요한 것 하나만 물어보세요.
 
 ### 전략 구체화 — 반드시 물어봐야 할 항목들
 전략이 모호하게 제시되면 아래 항목들을 단계적으로 탐색하세요.
@@ -333,6 +371,21 @@ draft_ir을 작성하기 전에 "이 팩터들의 방향이 모두 올바른가?
   - 섹터 제약 여부
   draft_ir에 완성된 전략(위 파라미터 모두 포함)을 넣고, strategy_summary도 작성하세요.
   draft_ir의 allocator 블록에 사용자가 확인한 파라미터 값이 명시되어야 합니다.
+
+  **status=ready 전환 시 message에 반드시 아래 형식의 Resolved Config를 포함하세요:**
+  ```
+  [전략 확정 명세]
+  팩터:
+    1) <팩터명> = <수식> (방향: +/-)  가중치: X%
+    2) ...
+  보유 종목: N개
+  리밸런싱: 주간/월간/분기
+  비중 배분: equal_weight / score_weighted / ...
+  체결 기준: next_open / same_close
+  모드: research / contest
+  기간: YYYY-MM-DD ~ YYYY-MM-DD
+  ```
+  이 명세를 보여준 뒤 "이대로 백테스트를 실행할까요?" 라고 확인을 구하세요.
 - **confirmed**: status가 ready인 상태에서 사용자의 마지막 메시지가 백테스트 실행 동의를 나타낼 때.
   단, 사용자가 수정을 원하면 clarifying으로 돌아가세요.
   draft_ir은 반드시 포함해야 합니다.
