@@ -132,23 +132,35 @@ def cs_vol_scale(s: pd.Series, vol: pd.Series, target_vol: float = 0.15) -> pd.S
 
 
 # ============================================================
+# Index alignment helper (used by both combine and predicate ops)
+# ============================================================
+
+def _align_b(a: pd.Series, b: pd.Series) -> pd.Series:
+    """Reindex b to match a's index. Entries absent in b become NaN."""
+    if a.index.equals(b.index):
+        return b
+    return b.reindex(a.index)
+
+
+# ============================================================
 # Combine operators
 # ============================================================
 
 def add(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a + b
+    return pd.Series(a.values + _align_b(a, b).values, index=a.index)
 
 
 def sub(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a - b
+    return pd.Series(a.values - _align_b(a, b).values, index=a.index)
 
 
 def mul(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a * b
+    return pd.Series(a.values * _align_b(a, b).values, index=a.index)
 
 
 def div(a: pd.Series, b: pd.Series, fill_inf: float = np.nan) -> pd.Series:
-    result = a / b.replace(0, np.nan)
+    b_aligned = _align_b(a, b).replace(0, np.nan)
+    result = pd.Series(a.values / b_aligned.values, index=a.index)
     return result.replace([np.inf, -np.inf], fill_inf)
 
 
@@ -177,53 +189,69 @@ def weighted_sum(inputs: list[pd.Series], weights: list[float]) -> pd.Series:
 
 
 def if_else(condition: pd.Series, true_val: pd.Series, false_val: pd.Series) -> pd.Series:
-    """Element-wise conditional selection."""
-    return pd.Series(
-        np.where(condition.fillna(False).astype(bool), true_val, false_val),
-        index=condition.index,
-    )
+    """Element-wise conditional selection.
+
+    Aligns true_val and false_val to condition.index before calling np.where,
+    so that mismatched indices (e.g. after NullPolicy.DROP on upstream nodes)
+    do not cause a shape-mismatch ValueError.
+    """
+    idx = condition.index
+    cond = condition.fillna(False).astype(bool)
+    t_aligned = true_val.reindex(idx)
+    f_aligned = false_val.reindex(idx)
+    return pd.Series(np.where(cond.values, t_aligned.values, f_aligned.values), index=idx)
 
 
 # ============================================================
 # Predicate operators
 # ============================================================
+#
+# Newer pandas raises ValueError for comparison ops on mis-labeled Series.
+# _align_b (defined above) reindexes b to a.index before comparing.
 
 def gt(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a > b
+    return pd.Series(a.values > _align_b(a, b).values, index=a.index)
 
 
 def gte(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a >= b
+    return pd.Series(a.values >= _align_b(a, b).values, index=a.index)
 
 
 def lt(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a < b
+    return pd.Series(a.values < _align_b(a, b).values, index=a.index)
 
 
 def lte(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a <= b
+    return pd.Series(a.values <= _align_b(a, b).values, index=a.index)
 
 
 def eq(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a == b
+    return pd.Series(a.values == _align_b(a, b).values, index=a.index)
 
 
 def ne(a: pd.Series, b: pd.Series) -> pd.Series:
-    return a != b
+    return pd.Series(a.values != _align_b(a, b).values, index=a.index)
+
+
+def _to_bool_array(s: pd.Series) -> np.ndarray:
+    """Convert Series to bool numpy array, treating NaN as False."""
+    return np.where(pd.isna(s.values), False, s.values.astype(bool))
 
 
 def logical_and(*args: pd.Series) -> pd.Series:
-    result = args[0].astype(bool)
+    idx = args[0].index
+    result = _to_bool_array(args[0])
     for a in args[1:]:
-        result = result & a.astype(bool)
-    return result
+        result = result & _to_bool_array(a.reindex(idx))
+    return pd.Series(result, index=idx, dtype=bool)
 
 
 def logical_or(*args: pd.Series) -> pd.Series:
-    result = args[0].astype(bool)
+    idx = args[0].index
+    result = _to_bool_array(args[0])
     for a in args[1:]:
-        result = result | a.astype(bool)
-    return result
+        result = result | _to_bool_array(a.reindex(idx))
+    return pd.Series(result, index=idx, dtype=bool)
 
 
 def logical_not(a: pd.Series) -> pd.Series:
