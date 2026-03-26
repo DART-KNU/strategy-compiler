@@ -110,6 +110,13 @@ def _chart_section(title: str, b64: str) -> str:
     )
 
 
+def _period_label(dr: Dict[str, str]) -> str:
+    """Return a short 'YYYY-MM-DD ~ YYYY-MM-DD' period string."""
+    s = dr.get("start", "")
+    e = dr.get("end", "")
+    return f"{s} ~ {e}" if s and e else ""
+
+
 def generate_html_report(
     report: Dict[str, Any],
     charts: Dict[str, str],
@@ -133,39 +140,47 @@ def generate_html_report(
     m = report.get("summary_metrics", {})
     dr = report.get("date_range", {})
     strategy_id = report.get("strategy_id", "")
+    strategy_name = report.get("strategy_name", strategy_id)
     initial_cap = report.get("initial_capital", 0)
-    benchmark = report.get("benchmark_index", "")
+    benchmark = report.get("benchmark_index", "벤치마크")
     run_ts = report.get("run_timestamp", "")[:19].replace("T", " ")
+    period = _period_label(dr)
+    n_days = m.get("n_trading_days", "")
+    dd_dur = m.get("max_dd_duration_days", None)
 
     # ── Hero metrics ──────────────────────────────────────────────
     hero = (
-        _card("총 수익률", m.get("total_return")) +
-        _card("연환산(CAGR)", m.get("cagr")) +
-        _card("샤프 비율", m.get("sharpe"), card_cls="") +
-        _card("최대 낙폭(MDD)", m.get("max_drawdown"))
+        _card(f"누적 수익률 ({period})", m.get("total_return")) +
+        _card("연환산 수익률 (CAGR)", m.get("cagr")) +
+        _card("샤프 비율 (무위험률=0%)", m.get("sharpe"), card_cls="") +
+        _card("최대 낙폭 MDD", m.get("max_drawdown"))
     )
 
     # ── Detailed metrics table ─────────────────────────────────────
+    dd_dur_label = f"MDD 지속 거래일 ({m.get('max_dd_peak_date','')} → {m.get('max_dd_trough_date','')})"
     rows = [
-        ("초기 자산", m.get("start_nav"), False),
-        ("최종 자산", m.get("end_nav"), False),
-        ("총 수익률", m.get("total_return"), True),
-        ("연환산(CAGR)", m.get("cagr"), True),
-        ("벤치마크 수익률", m.get("benchmark_total_return"), True),
-        ("초과 수익률", m.get("excess_return"), True),
-        ("연환산 변동성", m.get("annualized_vol"), True),
-        ("샤프 비율", m.get("sharpe"), False),
-        ("소르티노 비율", m.get("sortino"), False),
-        ("칼마 비율", m.get("calmar"), False),
-        ("최대 낙폭(MDD)", m.get("max_drawdown"), True),
+        ("초기 자산 (KRW)", m.get("start_nav"), False),
+        ("최종 자산 (KRW)", m.get("end_nav"), False),
+        (f"누적 수익률 ({period})", m.get("total_return"), True),
+        ("연환산 수익률 CAGR", m.get("cagr"), True),
+        (f"벤치마크 누적 수익률 ({benchmark}, 동기간)", m.get("benchmark_total_return"), True),
+        (f"벤치마크 CAGR ({benchmark}, 동기간)", m.get("benchmark_cagr"), True),
+        (f"초과 수익률 (전략 − {benchmark}, 동기간)", m.get("excess_return"), True),
+        (f"초과 CAGR (전략 − {benchmark} CAGR)", m.get("excess_cagr"), True),
+        ("연환산 변동성 (일간 × √252)", m.get("annualized_vol"), True),
+        ("샤프 비율 (무위험수익률=0%)", m.get("sharpe"), False),
+        ("소르티노 비율 (무위험수익률=0%)", m.get("sortino"), False),
+        ("칼마 비율 (CAGR / |MDD|)", m.get("calmar"), False),
+        ("최대 낙폭 MDD", m.get("max_drawdown"), True),
         ("MDD 고점일", m.get("max_dd_peak_date"), False),
         ("MDD 저점일", m.get("max_dd_trough_date"), False),
-        ("추적오차(TE)", m.get("tracking_error"), True),
-        ("정보 비율(IR)", m.get("information_ratio"), False),
-        ("베타", m.get("beta"), False),
-        ("일간 승률", m.get("win_rate"), True),
-        ("평균 회전율", m.get("average_turnover"), True),
-        ("거래일 수", m.get("n_trading_days"), False),
+        (dd_dur_label, dd_dur, False),
+        (f"추적오차 TE (연환산, vs {benchmark})", m.get("tracking_error"), True),
+        (f"정보 비율 IR (vs {benchmark})", m.get("information_ratio"), False),
+        (f"베타 (vs {benchmark})", m.get("beta"), False),
+        ("일별 승률 (상승일 / 전체 거래일)", m.get("win_rate"), True),
+        ("평균 월간 회전율 (편도, 전체 기간 평균)", m.get("average_monthly_turnover") or m.get("average_turnover"), True),
+        (f"총 거래일 수 ({period})", n_days, False),
     ]
     table_rows_html = ""
     for label, val, is_pct in rows:
@@ -219,20 +234,20 @@ def generate_html_report(
   <h2>상세 성과 지표</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>지표</th><th>값</th></tr></thead>
+      <thead><tr><th>지표 (기준/기간 포함)</th><th>값</th></tr></thead>
       <tbody>{table_rows_html}</tbody>
     </table>
   </div>
 
-  {_chart_section("누적 수익률", charts.get("nav",""))}
-  {_chart_section("낙폭 (Drawdown)", charts.get("drawdown",""))}
-  {_chart_section("월별 수익률 히트맵", charts.get("monthly",""))}
-  {_chart_section("섹터 배분", charts.get("sector",""))}
+  {_chart_section(f"누적 수익률 ({period})", charts.get("nav",""))}
+  {_chart_section(f"낙폭 Drawdown ({period})", charts.get("drawdown",""))}
+  {_chart_section("월별 수익률 히트맵 (%)", charts.get("monthly",""))}
+  {_chart_section(f"섹터 배분 추이 ({period})", charts.get("sector",""))}
 
-  <h2>주요 보유 종목 (평균 비중 상위)</h2>
+  <h2>주요 보유 종목 (전체 기간 평균 비중 상위)</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>#</th><th>종목코드</th><th>평균 비중</th></tr></thead>
+      <thead><tr><th>#</th><th>종목코드</th><th>평균 비중 ({period})</th></tr></thead>
       <tbody>{holding_rows}</tbody>
     </table>
   </div>
@@ -242,7 +257,14 @@ def generate_html_report(
   <h2>AI 전략 리뷰</h2>
   <div class="review-box">{html.escape(narration or "리뷰가 없습니다.")}</div>
 
-  <div class="footer">DART-backtest-NL &nbsp;|&nbsp; 본 리포트는 연구 목적의 백테스트 결과이며 실제 투자 권유가 아닙니다.</div>
+  <div class="footer">
+    DART-backtest-NL &nbsp;|&nbsp;
+    백테스트 기간: {html.escape(period)} &nbsp;|&nbsp;
+    벤치마크: {html.escape(benchmark)} &nbsp;|&nbsp;
+    변동성·샤프·소르티노: 일간 수익률 기준, 연환산계수={html.escape(str(252))}, 무위험수익률=0% &nbsp;|&nbsp;
+    회전율: 편도(one-way), 월평균 &nbsp;|&nbsp;
+    본 리포트는 연구 목적의 백테스트 결과이며 실제 투자 권유가 아닙니다.
+  </div>
 </div>
 """
 

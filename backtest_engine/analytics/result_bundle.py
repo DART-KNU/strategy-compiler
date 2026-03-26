@@ -109,6 +109,12 @@ class ReportBundleBuilder:
             nav_series,
         )
 
+        # Compute period length for notes
+        dr = raw_bundle.get("date_range", {})
+        nav_len = len(nav_series)
+        n_years = nav_len / self._metrics_engine.af
+        benchmark_index = raw_bundle.get("benchmark_index", "")
+
         # Build bundle
         report = {
             "run_id": raw_bundle.get("run_id"),
@@ -120,10 +126,12 @@ class ReportBundleBuilder:
             "ir_hash": raw_bundle.get("ir_hash"),
             "date_range": raw_bundle.get("date_range"),
             "initial_capital": raw_bundle.get("initial_capital"),
-            "benchmark_index": raw_bundle.get("benchmark_index"),
+            "benchmark_index": benchmark_index,
 
             # Core performance data
-            "summary_metrics": self._format_summary_metrics(metrics),
+            "summary_metrics": self._format_summary_metrics(
+                metrics, benchmark=benchmark_index, n_years=n_years
+            ),
 
             # Time series (truncated for readability)
             "nav_series": {k: round(v, 2) for k, v in nav_series.items()},
@@ -135,7 +143,10 @@ class ReportBundleBuilder:
             "top_holdings": top_holdings,
             "top_trades": top_trades,
             "sector_exposure_history": sector_exposure,
-            "turnover_history": turnover_history,
+            "turnover_history": {
+                "_meta": "월별 편도 회전율 (매수+매도) / (2 × 평균NAV). 키 형식: YYYY-MM",
+                "data": turnover_history,
+            },
 
             # Attribution
             "sleeve_attribution": sleeve_attr,
@@ -149,13 +160,37 @@ class ReportBundleBuilder:
 
         return report
 
-    def _format_summary_metrics(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
-        """Format summary metrics for human readability."""
+    # Descriptions shown alongside each metric key in the JSON output
+    _METRIC_NOTES: Dict[str, str] = {
+        "total_return":             "전체 백테스트 기간 누적 수익률",
+        "cagr":                     "연환산 복리 수익률 (CAGR), 기간={period}",
+        "annualized_vol":           "연환산 변동성 — 일간 수익률 표준편차 × √{af}",
+        "sharpe":                   "샤프 비율 — (연환산 초과수익) / 연환산 변동성, 무위험수익률=0%",
+        "sortino":                  "소르티노 비율 — (연환산 초과수익) / 하방 표준편차, 무위험수익률=0%",
+        "calmar":                   "칼마 비율 — CAGR / |MDD|",
+        "max_drawdown":             "최대 낙폭(MDD) — 고점 대비 최대 손실률",
+        "max_dd_duration_days":     "MDD 지속 거래일 수 (고점 → 저점까지 거래일 수)",
+        "win_rate":                 "일별 승률 — 상승 거래일 수 / 전체 거래일 수",
+        "tracking_error":           "추적오차(TE) — 전략 vs {benchmark} 초과수익의 연환산 표준편차",
+        "information_ratio":        "정보 비율(IR) — 연환산 초과수익 / TE, vs {benchmark}",
+        "beta":                     "베타 — {benchmark} 대비 시장 민감도",
+        "benchmark_total_return":   "벤치마크({benchmark}) 동기간 누적 수익률 (전략과 동일 기간)",
+        "benchmark_cagr":           "벤치마크({benchmark}) 동기간 CAGR",
+        "excess_return":            "초과 수익률 — 전략 누적 수익률 − {benchmark} 누적 수익률 (동기간)",
+        "excess_cagr":              "초과 CAGR — 전략 CAGR − {benchmark} CAGR (동기간)",
+        "average_monthly_turnover": "평균 월간 회전율 (편도) — 전체 기간 월평균, (매수 + 매도) / (2 × 평균 NAV) / 월수",
+        "average_turnover":         "평균 월간 회전율 (편도) — average_monthly_turnover와 동일",
+        "n_trading_days":           "백테스트 기간 총 거래일 수",
+    }
+
+    def _format_summary_metrics(self, metrics: Dict[str, Any], benchmark: str = "", n_years: float = 0.0) -> Dict[str, Any]:
+        """Format summary metrics for human readability, with computation notes."""
         fmt = {}
         pct_keys = {
             "total_return", "cagr", "annualized_vol", "max_drawdown",
             "win_rate", "tracking_error", "benchmark_total_return",
-            "benchmark_cagr", "excess_return", "excess_cagr", "average_turnover"
+            "benchmark_cagr", "excess_return", "excess_cagr",
+            "average_turnover", "average_monthly_turnover",
         }
         ratio_keys = {"sharpe", "sortino", "information_ratio", "calmar", "beta"}
 
@@ -172,6 +207,20 @@ class ReportBundleBuilder:
                 fmt[k] = f"{v:,.0f}"
             else:
                 fmt[k] = v
+
+        # Attach human-readable notes for each metric
+        af = self._metrics_engine.af
+        period_str = f"{n_years:.1f}년" if n_years > 0 else "전체 기간"
+        notes: Dict[str, str] = {}
+        for k, template in self._METRIC_NOTES.items():
+            if k in fmt:
+                notes[k] = (
+                    template
+                    .replace("{benchmark}", benchmark or "벤치마크")
+                    .replace("{af}", str(af))
+                    .replace("{period}", period_str)
+                )
+        fmt["_notes"] = notes
         return fmt
 
     def _build_monthly_table(self, rows: List[Dict]) -> Dict[str, Dict[int, float]]:

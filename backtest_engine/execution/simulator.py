@@ -52,6 +52,72 @@ from backtest_engine.strategy_ir.models import (
 )
 
 
+def _current_weights(
+    holdings: Dict[str, float],
+    cash: float,
+    prices: Dict[str, float],
+) -> pd.Series:
+    """Compute current portfolio weight vector from holdings."""
+    values: Dict[str, float] = {}
+    nav = cash
+    for ticker, shares in holdings.items():
+        price = prices.get(ticker, 0.0)
+        if price > 0:
+            v = shares * price
+            values[ticker] = v
+            nav += v
+    if nav <= 0 or not values:
+        return pd.Series(dtype=float)
+    return pd.Series({t: v / nav for t, v in values.items()})
+
+
+def _partial_target(
+    current_weights: pd.Series,
+    target_weights: pd.Series,
+    max_turnover: Optional[float] = None,
+    min_turnover: Optional[float] = None,
+) -> pd.Series:
+    """
+    Return an intermediate target that moves from current toward target,
+    constrained by [min_turnover, max_turnover] per step (one-way).
+
+    Rules:
+    - step ≤ max_turnover          (cap: prevents over-trading)
+    - step ≥ min(needed, min_turnover)  (floor: enforces minimum when gap allows)
+    - step ≤ needed                (never overshoot the target)
+
+    If neither bound is set, returns target unchanged.
+    """
+    all_tickers = current_weights.index.union(target_weights.index)
+    cur = current_weights.reindex(all_tickers).fillna(0.0)
+    tgt = target_weights.reindex(all_tickers).fillna(0.0)
+    delta = tgt - cur
+    needed = delta.abs().sum() / 2  # one-way turnover
+
+    if needed <= 1e-9:
+        return tgt  # already at target
+
+    step = needed  # default: close gap completely
+
+    # Apply cap (max)
+    if max_turnover is not None:
+        step = min(step, max_turnover)
+
+    # Apply floor (min), but never exceed remaining gap
+    if min_turnover is not None:
+        step = max(step, min(needed, min_turnover))
+
+    if abs(step - needed) <= 1e-9:
+        return tgt  # step covers full gap — return exact target
+
+    scale = step / needed
+    intermediate = (cur + delta * scale).clip(lower=0.0)
+    total = intermediate.sum()
+    if total > 1e-9:
+        intermediate /= total
+    return intermediate[intermediate > 1e-9]
+
+
 class ExecutionSimulator:
     """
     Main backtest simulation engine.
@@ -101,13 +167,35 @@ class ExecutionSimulator:
         if not trading_days:
             raise ValueError(f"No trading days in range [{start}, {end}]")
 
-        # Get rebalance dates
+        # Compute signal dates (when to recompute target portfolio)
         reb_dates = self._calendar.get_rebalance_dates(start, end, strategy.rebalancing)
-        reb_set = set(reb_dates)
+        signal_set = set(reb_dates)
+
+        # Compute execution dates (when to actually trade)
+        exec_cadence = strategy.rebalancing.execution_cadence
+        if exec_cadence is not None:
+            from copy import deepcopy
+            exec_cal_cfg = deepcopy(strategy.rebalancing)
+            exec_cal_cfg.frequency = exec_cadence
+            exec_cal_cfg.look_ahead_buffer = 0  # no buffer on execution dates
+            exec_dates = set(self._calendar.get_rebalance_dates(start, end, exec_cal_cfg))
+        else:
+            exec_dates = signal_set
+
+        max_turnover_step = strategy.rebalancing.max_turnover_per_rebalance
+        min_turnover_step = strategy.rebalancing.min_turnover_per_rebalance
+        all_action_dates = signal_set | exec_dates
 
         if self._verbose:
+            to_range = ""
+            if min_turnover_step is not None or max_turnover_step is not None:
+                lo = f"{min_turnover_step:.0%}" if min_turnover_step is not None else "0%"
+                hi = f"{max_turnover_step:.0%}" if max_turnover_step is not None else "∞"
+                to_range = f" [{lo}~{hi}/step]"
             print(f"[{self._run_id}] Running backtest: {start} -> {end}, "
-                  f"{len(trading_days)} trading days, {len(reb_dates)} rebalances")
+                  f"{len(trading_days)} trading days, {len(reb_dates)} signal dates"
+                  + (f", {len(exec_dates)} execution dates{to_range}"
+                     if exec_cadence else f", {len(reb_dates)} rebalances"))
 
         # Initialize state
         initial_capital = ex_cfg.initial_capital
@@ -132,8 +220,9 @@ class ExecutionSimulator:
         if strategy.mode == RunMode.CONTEST:
             turnover_monitor = TurnoverMonitor(min_weekly_turnover=0.05)
 
-        # Main loop
+        # Dual-cadence state
         prev_reb_weights: Optional[pd.Series] = None
+        pending_target_weights: Optional[pd.Series] = None  # latest signal target
 
         for trade_date in trading_days:
             # Mark to market
@@ -155,10 +244,13 @@ class ExecutionSimulator:
             # Record holdings
             holdings_history[trade_date] = dict(holdings)
 
-            # Rebalance?
-            if trade_date in reb_set:
+            if trade_date not in all_action_dates:
+                continue
+
+            # Step 1: if this is a signal date, compute new target (no trades yet)
+            if trade_date in signal_set:
                 try:
-                    result = self._execute_rebalance(
+                    new_target = self._compute_target_weights(
                         signal_date=trade_date,
                         holdings=holdings,
                         cash=cash,
@@ -166,57 +258,94 @@ class ExecutionSimulator:
                         prices_today=prices_today,
                         ex_cfg=ex_cfg,
                     )
-
-                    if result is not None:
-                        holdings = result.new_holdings
-                        cash = result.new_cash
-
-                        # Record trades
-                        for t in result.trades:
-                            trade_history.append({
-                                "signal_date": t.trade_date,
-                                "fill_date": t.fill_date,
-                                "ticker": t.ticker,
-                                "direction": t.direction,
-                                "shares": t.shares,
-                                "fill_price": t.fill_price,
-                                "notional": t.notional,
-                                "total_cost": t.total_cost,
-                            })
-
-                        # Record weights
-                        prices_fill = self._get_prices(result.fill_date)
-                        nav_after = result.nav_after
-                        if nav_after > 0:
-                            cur_weights = pd.Series({
-                                t: (s * prices_fill.get(t, 0.0)) / nav_after
-                                for t, s in holdings.items()
-                            })
-                        else:
-                            cur_weights = pd.Series(dtype=float)
-
-                        weights_history[trade_date] = cur_weights
-                        prev_reb_weights = cur_weights
-
-                        # Update NAV after rebalance
-                        nav_after_calc = result.new_cash + sum(
-                            result.new_holdings.get(t, 0.0) * prices_today.get(t, 0.0)
-                            for t in result.new_holdings
-                        )
-                        nav_series[trade_date] = nav_after_calc
-
-                        # Contest turnover tracking
-                        if turnover_monitor:
-                            week_id = self._calendar.get_week_id(trade_date)
-                            turnover_monitor.record(
-                                week_id, result.total_buys, result.total_sells, nav_after_calc
-                            )
-
-                        if constraint_violations:
-                            pass  # violations are collected per rebalance
+                    if new_target is not None:
+                        pending_target_weights = new_target
+                        if self._verbose and exec_cadence is not None:
+                            print(f"  [{trade_date}] New target computed ({len(new_target)} tickers)")
                 except Exception as e:
                     if self._verbose:
-                        print(f"  [WARN] Rebalance failed on {trade_date}: {e}")
+                        print(f"  [WARN] Signal computation failed on {trade_date}: {e}")
+
+            # Step 2: if this is an execution date, trade toward pending target
+            if trade_date not in exec_dates:
+                continue
+
+            # Determine which target to use
+            if exec_cadence is not None:
+                # Dual-cadence: use pending target (computed above or from a prior signal date)
+                if pending_target_weights is None:
+                    continue
+                effective_target = pending_target_weights
+                if max_turnover_step is not None or min_turnover_step is not None:
+                    current_weights = _current_weights(holdings, cash, prices_today)
+                    effective_target = _partial_target(
+                        current_weights, pending_target_weights,
+                        max_turnover=max_turnover_step,
+                        min_turnover=min_turnover_step,
+                    )
+            else:
+                # Single-cadence: pending_target was just set above (signal_set == exec_dates)
+                if pending_target_weights is None:
+                    continue
+                effective_target = pending_target_weights
+
+            try:
+                result = self._execute_with_target(
+                    signal_date=trade_date,
+                    target_weights=effective_target,
+                    holdings=holdings,
+                    cash=cash,
+                    prices_today=prices_today,
+                    ex_cfg=ex_cfg,
+                )
+
+                if result is not None:
+                    holdings = result.new_holdings
+                    cash = result.new_cash
+
+                    # Record trades
+                    for t in result.trades:
+                        trade_history.append({
+                            "signal_date": t.trade_date,
+                            "fill_date": t.fill_date,
+                            "ticker": t.ticker,
+                            "direction": t.direction,
+                            "shares": t.shares,
+                            "fill_price": t.fill_price,
+                            "notional": t.notional,
+                            "total_cost": t.total_cost,
+                        })
+
+                    # Record weights
+                    prices_fill = self._get_prices(result.fill_date)
+                    nav_after = result.nav_after
+                    if nav_after > 0:
+                        cur_weights = pd.Series({
+                            t: (s * prices_fill.get(t, 0.0)) / nav_after
+                            for t, s in holdings.items()
+                        })
+                    else:
+                        cur_weights = pd.Series(dtype=float)
+
+                    weights_history[trade_date] = cur_weights
+                    prev_reb_weights = cur_weights
+
+                    # Update NAV after rebalance
+                    nav_after_calc = result.new_cash + sum(
+                        result.new_holdings.get(t, 0.0) * prices_today.get(t, 0.0)
+                        for t in result.new_holdings
+                    )
+                    nav_series[trade_date] = nav_after_calc
+
+                    # Contest turnover tracking
+                    if turnover_monitor:
+                        week_id = self._calendar.get_week_id(trade_date)
+                        turnover_monitor.record(
+                            week_id, result.total_buys, result.total_sells, nav_after_calc
+                        )
+            except Exception as e:
+                if self._verbose:
+                    print(f"  [WARN] Execution failed on {trade_date}: {e}")
 
         # Final contest turnover check
         contest_to_violations = []
@@ -241,33 +370,31 @@ class ExecutionSimulator:
 
         return result_bundle
 
-    def _execute_rebalance(
+    def _compute_target_weights(
         self,
         signal_date: str,
         holdings: Dict[str, float],
         cash: float,
         prev_weights: Optional[pd.Series],
-        prices_today: pd.Series,
+        prices_today,
         ex_cfg,
-    ) -> Optional[RebalanceResult]:
+    ) -> Optional[pd.Series]:
         """
-        Generate target weights for all sleeves, mix them, execute trades.
+        Run the sleeve/node-graph pipeline and return final target weights.
+        Does NOT execute any trades.
         """
         strategy = self._strategy
 
-        # Get universe snapshot for signal date
         snap = self._snapshot_loader.load_snapshot(
             signal_date,
             strategy.base_universe,
             self._get_required_fields(),
         )
-
         if snap.empty:
             if self._verbose:
-                print(f"  [{signal_date}] Empty universe — skip rebalance")
+                print(f"  [{signal_date}] Empty universe — skip signal")
             return None
 
-        # Evaluate each sleeve
         sleeve_weights_map: Dict[str, pd.Series] = {}
         for sleeve in strategy.sleeves:
             sw = self._evaluate_sleeve(sleeve, signal_date, snap, prev_weights)
@@ -277,20 +404,17 @@ class ExecutionSimulator:
         if not sleeve_weights_map:
             return None
 
-        # Mix sleeves
         regime_predicates = self._evaluate_regime_predicates(signal_date, snap)
         combined_weights = self._mixer.mix(
             sleeve_weights_map,
             strategy.portfolio_aggregation,
             regime_predicates,
         )
-
         if combined_weights.empty:
             return None
 
-        # Apply final portfolio constraints
         benchmark_sector_weights = self._get_benchmark_sector_weights(signal_date)
-        final_weights, violations = apply_constraints(
+        final_weights, _ = apply_constraints(
             combined_weights,
             snap,
             strategy.portfolio_aggregation.final_constraints,
@@ -298,8 +422,21 @@ class ExecutionSimulator:
             benchmark_sector_weights=benchmark_sector_weights,
             prev_weights=prev_weights,
         )
+        return final_weights if not final_weights.empty else None
 
-        # Get fill prices
+    def _execute_with_target(
+        self,
+        signal_date: str,
+        target_weights: pd.Series,
+        holdings: Dict[str, float],
+        cash: float,
+        prices_today,
+        ex_cfg,
+    ) -> Optional[RebalanceResult]:
+        """Execute trades toward pre-computed target weights."""
+        strategy = self._strategy
+
+        # Resolve fill date and prices
         fill_rule = ex_cfg.fill_rule
         if fill_rule == FillRule.NEXT_OPEN:
             fill_date = self._calendar.next_trading_day(signal_date, 1) or signal_date
@@ -311,24 +448,27 @@ class ExecutionSimulator:
             fill_date = signal_date
             prices = prices_today
 
-        # Execute
         if strategy.mode == RunMode.CONTEST:
-            adv5 = snap.get("adv5", pd.Series(dtype=float))
+            # Load adv5 from snapshot for market-impact calc
+            snap = self._snapshot_loader.load_snapshot(
+                signal_date, strategy.base_universe, ["adv5"]
+            )
+            adv5 = snap.get("adv5", pd.Series(dtype=float)) if not snap.empty else pd.Series(dtype=float)
             return execute_rebalance_contest(
                 signal_date=signal_date,
                 fill_date=fill_date,
-                target_weights=final_weights,
+                target_weights=target_weights,
                 current_holdings=holdings,
                 current_cash=cash,
                 prices=prices,
-                adv5=adv5.reindex(final_weights.index).fillna(0.0),
+                adv5=adv5.reindex(target_weights.index).fillna(0.0),
                 config=ex_cfg,
             )
         else:
             return execute_rebalance_research(
                 signal_date=signal_date,
                 fill_date=fill_date,
-                target_weights=final_weights,
+                target_weights=target_weights,
                 current_holdings=holdings,
                 current_cash=cash,
                 prices=prices,

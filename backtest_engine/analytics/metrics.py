@@ -64,10 +64,11 @@ class MetricsEngine:
         metrics["sortino"] = round(sortino, 4)
 
         # Max drawdown
-        max_dd, peak_date, trough_date = self._max_drawdown(nav_series)
+        max_dd, peak_date, trough_date, dd_duration = self._max_drawdown(nav_series)
         metrics["max_drawdown"] = round(max_dd, 6)
         metrics["max_dd_peak_date"] = peak_date
         metrics["max_dd_trough_date"] = trough_date
+        metrics["max_dd_duration_days"] = dd_duration  # trading days peak→trough
 
         # Win rate
         win_rate = (port_returns > 0).sum() / max(len(port_returns), 1)
@@ -106,9 +107,11 @@ class MetricsEngine:
             else:
                 metrics["beta"] = None
 
-        # Turnover
+        # Turnover (monthly average, one-way)
         trade_history = bundle.get("trade_history", [])
-        metrics["average_turnover"] = self._compute_average_turnover(trade_history, nav_series)
+        metrics["average_monthly_turnover"] = self._compute_average_turnover(trade_history, nav_series)
+        # Keep legacy key for backward compat
+        metrics["average_turnover"] = metrics["average_monthly_turnover"]
 
         # Monthly returns table
         metrics["monthly_returns"] = self._monthly_returns(nav_series)
@@ -118,8 +121,8 @@ class MetricsEngine:
 
         return metrics
 
-    def _max_drawdown(self, nav: pd.Series) -> Tuple[float, str, str]:
-        """Compute maximum drawdown and peak/trough dates."""
+    def _max_drawdown(self, nav: pd.Series) -> Tuple[float, str, str, int]:
+        """Compute maximum drawdown, peak/trough dates, and duration (trading days)."""
         cum_max = nav.cummax()
         dd = (nav - cum_max) / cum_max
         min_idx = dd.idxmin()
@@ -127,7 +130,15 @@ class MetricsEngine:
         # Find the peak before the trough
         peak_region = nav[:min_idx]
         peak_idx = peak_region.idxmax() if not peak_region.empty else min_idx
-        return float(trough_val), str(peak_idx), str(min_idx)
+        # Duration: number of trading days from peak to trough (inclusive)
+        dates = nav.index.tolist()
+        try:
+            peak_pos = dates.index(peak_idx)
+            trough_pos = dates.index(min_idx)
+            duration = trough_pos - peak_pos
+        except ValueError:
+            duration = 0
+        return float(trough_val), str(peak_idx), str(min_idx), duration
 
     def _drawdown_series(self, nav: pd.Series) -> Dict[str, float]:
         """Return drawdown series as dict."""

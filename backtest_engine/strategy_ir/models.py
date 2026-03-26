@@ -400,6 +400,27 @@ class RebalancingConfig(BaseModel):
     day_of_month: int = Field(1, ge=1, le=28, description="For monthly: rebalance on N-th trading day")
     custom_dates: List[str] = Field(default_factory=list, description="For custom frequency")
     look_ahead_buffer: int = Field(1, ge=0, description="Extra buffer days after rebalance signal")
+    # Dual-cadence: compute signals at 'frequency', execute trades at 'execution_cadence'
+    execution_cadence: Optional[RebalanceFrequency] = Field(
+        None,
+        description="If set, trade at this frequency while signals fire at 'frequency'. "
+                    "E.g. monthly signal + weekly execution for contest turnover rules.",
+    )
+    min_turnover_per_rebalance: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Floor on one-way turnover per execution step (0.05 = 5%). "
+                    "Ensures at least this much is traded each step when gap allows. "
+                    "Used with execution_cadence to meet contest minimum turnover rules.",
+    )
+    max_turnover_per_rebalance: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Cap on one-way turnover per execution step (0.05 = 5%). "
+                    "Used with execution_cadence to pace trades gradually.",
+    )
 
 
 class ExecutionConfig(BaseModel):

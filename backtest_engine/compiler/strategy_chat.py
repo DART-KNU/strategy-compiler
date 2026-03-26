@@ -57,6 +57,27 @@ _SYSTEM_PROMPT_TEMPLATE = """\
 }}
 ```
 
+이중 주기 리밸런싱 예시 (월간 신호 + 주간 회전율 범위 제한 — contest 모드 전용):
+```json
+{{
+  "rebalancing": {{
+    "frequency": "monthly",
+    "day_of_month": 1,
+    "look_ahead_buffer": 1,
+    "execution_cadence": "weekly",
+    "min_turnover_per_rebalance": 0.05,
+    "max_turnover_per_rebalance": 0.10
+  }}
+}}
+```
+- `execution_cadence`: 신호는 `frequency`(월간)로 생성하되, 실제 거래는 이 주기(주간)로 실행
+- `min_turnover_per_rebalance`: 한 번의 실행 스텝에서 최소 편도 회전율 (0.05 = 5%)
+  → 타겟과 갭이 있는 한 매주 최소 5%를 거래. 갭이 min보다 작으면 갭 전체를 소진
+- `max_turnover_per_rebalance`: 한 번의 실행 스텝에서 최대 편도 회전율 (0.10 = 10%)
+  → 주당 거래비용 상한 역할. null이면 제한 없음
+- 동작: 월말에 타겟 포트폴리오 계산 → 이후 매주 [min, max] 범위 안에서 타겟을 향해 점진적 접근
+- 용도: 대회의 **주간 최소 5% 회전율 규정** 충족 + 거래비용 상한 동시 제어
+
 마르코위츠 예시 (파라미터 포함):
 ```json
 {{
@@ -161,10 +182,49 @@ CS 정규화 (섹터중립 zscore):
 }}, "output": "score"}}
 ```
 
+다중 필터 AND 조합 — 시가총액 상위 30% AND 부채비율 100% 미만 (predicate + combine mul):
+```json
+{{"nodes": {{
+  "mcap":      {{"node_id": "mcap",      "type": "field",     "field_id": "market_cap"}},
+  "debt":      {{"node_id": "debt",      "type": "field",     "field_id": "net_debt_to_equity"}},
+  "mom":       {{"node_id": "mom",       "type": "field",     "field_id": "ret_60d"}},
+  "mcap_rank": {{"node_id": "mcap_rank", "type": "cs_op",     "op": "rank", "input": "mcap"}},
+  "thr_70":    {{"node_id": "thr_70",    "type": "constant",  "value": 0.7}},
+  "thr_debt":  {{"node_id": "thr_debt",  "type": "constant",  "value": 1.0}},
+  "is_top30":  {{"node_id": "is_top30",  "type": "predicate", "op": "gte", "inputs": ["mcap_rank", "thr_70"]}},
+  "is_lowdebt":{{"node_id": "is_lowdebt","type": "predicate", "op": "lt",  "inputs": ["debt", "thr_debt"]}},
+  "both_pass": {{"node_id": "both_pass", "type": "combine",   "op": "mul", "inputs": ["is_top30", "is_lowdebt"]}},
+  "mom_z":     {{"node_id": "mom_z",     "type": "cs_op",     "op": "zscore", "input": "mom"}},
+  "zero":      {{"node_id": "zero",      "type": "constant",  "value": 0.0}},
+  "score":     {{"node_id": "score",     "type": "condition", "condition": "both_pass",
+                "true_branch": "mom_z", "false_branch": "zero"}}
+}}, "output": "score"}}
+```
+- `predicate` 노드는 0 또는 1의 Boolean 시리즈를 반환합니다.
+- 여러 조건을 AND로 결합할 때는 `combine` + `op: "mul"` 을 사용하세요. (0×1=0, 1×1=1)
+- OR 결합이 필요하면 `combine` + `op: "add"` 후 `predicate gte` 1.0으로 이진화하세요.
+
 ## ⚠️ 유효한 node type 목록 — 반드시 이 목록만 사용
 `field` / `constant` / `benchmark_ref` / `ts_op` / `cs_op` / `combine` / `predicate` / `condition`
 
 **`compare`는 존재하지 않습니다.** 비교 연산은 반드시 `predicate` 노드를 사용하세요.
+
+### ⚠️ condition 노드 필드 — 반드시 문자열 node_id만 허용
+`condition`, `true_branch`, `false_branch` 필드에는 **반드시 문자열 node_id**만 넣으세요.
+인라인 노드 객체(`{{"node_id": ..., "type": ...}}`)를 직접 삽입하면 Pydantic 유효성 오류가 발생합니다.
+
+올바른 예:
+```json
+{{"type": "condition", "condition": "is_high", "true_branch": "vol_rank", "false_branch": "zero"}}
+```
+잘못된 예 (오류 발생):
+```json
+{{"type": "condition",
+  "condition": {{"node_id": "is_high", "type": "predicate", ...}},
+  "false_branch": {{"node_id": "zero", "type": "constant", "value": 0.0}}
+}}
+```
+참조할 노드들은 반드시 `nodes` 딕셔너리 안에 별도로 정의하고, 그 `node_id` 문자열로만 참조하세요.
 
 ### ts_op 사용 가능한 op 목록
 `lag` / `sma` / `ema` / `std` / `mean` / `zscore` / `rank` / `percentile` / `downside_std`
@@ -188,10 +248,15 @@ CS 정규화 (섹터중립 zscore):
 
 ## 사용 가능한 field_id
 수익률: ret_1d, ret_5d, ret_20d, ret_60d
+  ↳ **이 4개만 존재합니다. ret_120d, ret_250d 등은 DB에 없습니다.**
+  ↳ 사용자가 "6개월 수익률", "12개월 모멘텀" 등을 요청하면 → 반드시 ret_60d 사용 (최장 가용)
+  ↳ 매핑 기준: 1개월≈ret_20d, 3개월≈ret_60d, 6개월 이상도→ret_60d
+
 변동성/유동성: vol_20d, adv5, adv20, turnover_ratio
 가격: close, adj_close, open, high, low, volume, market_cap
 가격 파생: price_to_52w_high  ← close / 52주 고점. 1.0=52주 신고가. 1.0 이상이면 신고가 돌파
 퀄리티: sales_growth_yoy, op_income_growth_yoy, net_debt_to_equity, cash_to_assets
+  ↳ net_debt_to_equity: (순부채/자기자본) 비율. 1.0 = 100%. "부채비율 100% 미만" = net_debt_to_equity < 1.0
 원시 재무: total_assets, sales, operating_income, net_income_parent
 
 ## allocator type 및 주요 파라미터
@@ -251,6 +316,7 @@ CS 정규화 (섹터중립 zscore):
 [모드]
   research   연구용 기본값
   contest    공모전 제약 (종목 15% 상한 / 섹터 2배 제한 / 시장충격 비용)
+             주간 최소 5% 회전율 규정 → 월간 신호 + 주간 5% 점진 실행 권장
 
 어떤 전략을 만들어 볼까요?
 ```
@@ -321,6 +387,15 @@ CS 정규화 (섹터중립 zscore):
 **[5단계] 리밸런싱**
 - 주기: 주간 / 월간 / 분기별?
 - 월간이라면 월 몇 번째 거래일에 리밸런싱? (기본: 1번째)
+- **contest 모드 전용 — 이중 주기 실행**: 대회에는 주간 최소 5% 회전율 규정이 있습니다.
+  단순 주간 리밸런싱은 거래비용이 과다하고, 월간 리밸런싱은 주간 5% 규정 미충족입니다.
+  이 경우 `execution_cadence: "weekly"`를 설정하고, **주간 회전율 범위**를 반드시 물어보세요:
+
+  → **최소 회전율 (`min_turnover_per_rebalance`)**: "매주 최소 몇 % 거래할까요? (대회 규정 하한 — 보통 5%)"
+  → **최대 회전율 (`max_turnover_per_rebalance`)**: "주당 최대 거래 비중은요? (비용 상한 — 예: 10%, 15%, 제한없음)"
+  - 두 값 모두 null 허용. null이면 해당 방향 제한 없음.
+  - 대회 기본 권장: min=0.05, max=0.10~0.15
+  사용자가 contest 모드를 선택했다면 이 옵션을 자동으로 제안하고 확인받으세요.
 
 **[6단계] 섹터 제약**
 - 섹터 비중 제한이 필요한가? "없음(기본) / 벤치마크 대비 최대 2배(max_sector_multiplier=2) / 절대 상한(max_sector_weight)"
@@ -346,6 +421,7 @@ CS 정규화 (섹터중립 zscore):
 | 퀄리티 (매출 성장) | sales_growth_yoy | 높을수록 좋음 | zscore → 그대로 합산 |
 | **저변동성** | **vol_20d, vol_60d** | **낮을수록 좋음** | **zscore → cs_op neg → 합산** |
 | 저부채/저레버리지 | net_debt_to_equity | 낮을수록 좋음 | zscore → cs_op neg → 합산 |
+| **부채비율 필터** | **net_debt_to_equity** | **임계값 주의** | **"100% 미만" = constant 1.0 (비율), `lt` predicate** |
 | 유동성(거래대금 선호) | adv5, adv20 | 높을수록 좋음 | zscore → 그대로 합산 |
 
 **저변동성 팩터 필수 패턴 (절대 생략 금지):**
@@ -379,7 +455,8 @@ draft_ir을 작성하기 전에 "이 팩터들의 방향이 모두 올바른가?
     1) <팩터명> = <수식> (방향: +/-)  가중치: X%
     2) ...
   보유 종목: N개
-  리밸런싱: 주간/월간/분기
+  신호 주기: 주간/월간/분기  (타겟 포트폴리오 계산 빈도)
+  실행 주기: <신호 주기와 동일> 또는 <주간 점진 실행 (execution_cadence=weekly, 회전율 범위: min=X% ~ max=Y%)>
   비중 배분: equal_weight / score_weighted / ...
   체결 기준: next_open / same_close
   모드: research / contest
@@ -608,6 +685,24 @@ class StrategyChat:
             return format(_to_f(metrics.get(key)), fmt)
 
         dr = draft_ir.get("date_range") or {}
+        reb = draft_ir.get("rebalancing") or {}
+        exec_cadence = reb.get("execution_cadence")
+        min_to = reb.get("min_turnover_per_rebalance")
+        max_to = reb.get("max_turnover_per_rebalance")
+        reb_desc = reb.get("frequency", "monthly")
+        if exec_cadence:
+            reb_desc += f" 신호 / {exec_cadence} 실행"
+            parts = []
+            if min_to is not None:
+                parts.append(f"최소 {min_to:.0%}")
+            if max_to is not None:
+                parts.append(f"최대 {max_to:.0%}")
+            if parts:
+                reb_desc += f" (회전율 {'/'.join(parts)}/회)"
+
+        dd_dur = metrics.get("max_dd_duration_days")
+        dd_dur_str = f"{dd_dur}거래일" if isinstance(dd_dur, int) and dd_dur > 0 else "–"
+
         prompt = f"""\
 아래 백테스트 결과를 바탕으로 전략 리뷰를 한국어로 작성해주세요.
 투자 전문가처럼 분석하되, 이해하기 쉽게 써주세요. 3~5 문단으로 작성하세요.
@@ -615,16 +710,20 @@ class StrategyChat:
 ## 전략 개요
 {draft_ir.get("strategy_summary") or draft_ir.get("strategy_id", "알 수 없음")}
 기간: {dr.get("start")} ~ {dr.get("end")}
+리밸런싱: {reb_desc}
 
-## 주요 성과 지표
-- 총 수익률: {pct("total_return")}
-- 연환산 수익률(CAGR): {pct("cagr")}
-- 연환산 변동성: {pct("annualized_vol")}
-- 샤프 비율: {num("sharpe")}
-- 최대 낙폭(MDD): {pct("max_drawdown")}
-- 정보 비율(IR): {num("information_ratio")}
-- 추적오차(TE): {pct("tracking_error")}
-- 평균 회전율: {pct("average_turnover")}
+## 주요 성과 지표 (수치 해석 기준 포함)
+- 누적 수익률 ({dr.get("start")} ~ {dr.get("end")}): {pct("total_return")}
+- 연환산 수익률 CAGR: {pct("cagr")}
+- 벤치마크 누적 수익률 (동기간): {pct("benchmark_total_return")}
+- 초과 수익률 (전략 − 벤치마크): {pct("excess_return")}
+- 연환산 변동성 (일간 × √252): {pct("annualized_vol")}
+- 샤프 비율 (무위험수익률=0%): {num("sharpe")}
+- 소르티노 비율 (무위험수익률=0%): {num("sortino")}
+- 최대 낙폭 MDD: {pct("max_drawdown")} (지속: {dd_dur_str})
+- 정보 비율 IR (vs 벤치마크): {num("information_ratio")}
+- 추적오차 TE (연환산, vs 벤치마크): {pct("tracking_error")}
+- 평균 월간 회전율 (편도, 전체 기간 평균): {pct("average_monthly_turnover") or pct("average_turnover")}
 
 ## 평가 힌트
 {json.dumps(hints, ensure_ascii=False, indent=2)}

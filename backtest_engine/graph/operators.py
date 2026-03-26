@@ -210,7 +210,7 @@ def if_else(condition: pd.Series, true_val: pd.Series, false_val: pd.Series) -> 
     do not cause a shape-mismatch ValueError.
     """
     idx = condition.index
-    cond = condition.fillna(False).astype(bool)
+    cond = condition.fillna(0).astype(bool)
     t_aligned = true_val.reindex(idx)
     f_aligned = false_val.reindex(idx)
     return pd.Series(np.where(cond.values, t_aligned.values, f_aligned.values), index=idx)
