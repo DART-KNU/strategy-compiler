@@ -213,39 +213,60 @@ def _plot_monthly_returns(report: dict) -> str:
 
 
 def _plot_sector_exposure(report: dict) -> str:
-    """Latest sector exposure horizontal bar chart. Returns base64 PNG."""
+    """Stacked bar chart of monthly sector exposure over full period. Returns base64 PNG."""
     import matplotlib.pyplot as plt
+    import pandas as pd
 
     seh = report.get("sector_exposure_history", {})
     if not seh:
         return ""
 
-    # Use last available snapshot
-    last_date = sorted(seh.keys())[-1]
-    sectors = seh[last_date]
-
-    # Filter valid entries (skip garbled keys)
-    valid = {k: v for k, v in sectors.items()
-             if isinstance(k, str) and not any(c == "\ufffd" for c in k) and v > 0.001}
-    if not valid:
+    # Build DataFrame: rows=dates, cols=sectors
+    rows = {}
+    for date, sectors in seh.items():
+        clean = {k: v for k, v in sectors.items()
+                 if isinstance(k, str) and not any(c == "\ufffd" for c in k) and v > 0.001}
+        if clean:
+            rows[date] = clean
+    if not rows:
         return ""
 
-    labels = list(valid.keys())
-    values = [v * 100 for v in valid.values()]
-    idx = np.argsort(values)[::-1]
-    labels = [labels[i] for i in idx]
-    values = [values[i] for i in idx]
+    df = pd.DataFrame(rows).T.fillna(0.0) * 100  # % weights
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
 
-    colors = plt.cm.tab10(np.linspace(0, 1, len(labels)))
-    fig, ax = plt.subplots(figsize=(8, max(3, len(labels) * 0.5)))
-    bars = ax.barh(labels, values, color=colors, edgecolor="white", linewidth=0.5)
-    for bar, v in zip(bars, values):
-        ax.text(v + 0.3, bar.get_y() + bar.get_height() / 2,
-                f"{v:.1f}%", va="center", fontsize=8.5)
-    ax.set_xlabel("비중 (%)")
-    ax.set_title(f"섹터 배분 ({last_date})", fontsize=13, fontweight="bold", pad=10)
+    # Keep top sectors by average weight; group rest as "기타"
+    avg = df.mean().sort_values(ascending=False)
+    top_sectors = avg.index[:9].tolist()
+    other_cols = [c for c in df.columns if c not in top_sectors]
+    if other_cols:
+        df["기타"] = df[other_cols].sum(axis=1)
+        df = df[top_sectors + ["기타"]]
+    else:
+        df = df[top_sectors]
+
+    colors = plt.cm.tab10(np.linspace(0, 1, len(df.columns)))
+    fig, ax = plt.subplots(figsize=(12, 4))
+    bottom = np.zeros(len(df))
+    x = np.arange(len(df))
+    for i, col in enumerate(df.columns):
+        vals = df[col].values
+        ax.bar(x, vals, bottom=bottom, label=col, color=colors[i],
+               edgecolor="white", linewidth=0.3)
+        bottom += vals
+
+    # X-axis: quarterly labels
+    tick_step = max(1, len(df) // 8)
+    ax.set_xticks(x[::tick_step])
+    ax.set_xticklabels([d.strftime("%Y-%m") for d in df.index[::tick_step]],
+                       rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("비중 (%)")
+    ax.set_ylim(0, 105)
+    dr = report.get("date_range", {})
+    period = f"{dr.get('start', '')} ~ {dr.get('end', '')}"
+    ax.set_title(f"섹터 배분 추이 ({period})", fontsize=13, fontweight="bold", pad=10)
+    ax.legend(loc="upper right", fontsize=7.5, ncol=2, framealpha=0.7)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.set_xlim(0, max(values) * 1.18)
     fig.tight_layout()
     return _fig_to_base64(fig)
 
