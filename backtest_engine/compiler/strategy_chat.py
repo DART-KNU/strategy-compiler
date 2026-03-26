@@ -257,7 +257,23 @@ CS 정규화 (섹터중립 zscore):
 가격 파생: price_to_52w_high  ← close / 52주 고점. 1.0=52주 신고가. 1.0 이상이면 신고가 돌파
 퀄리티: sales_growth_yoy, op_income_growth_yoy, net_debt_to_equity, cash_to_assets
   ↳ net_debt_to_equity: (순부채/자기자본) 비율. 1.0 = 100%. "부채비율 100% 미만" = net_debt_to_equity < 1.0
-원시 재무: total_assets, sales, operating_income, net_income_parent
+원시 재무: total_assets, sales, operating_income, net_income_parent, total_equity_parent,
+          total_liabilities, total_financial_debt, operating_cash_flow, cash_and_cash_equivalents
+
+### ROE (자기자본이익률) — combine: div 파생 패턴
+ROE = net_income_parent / total_equity_parent. DB에 직접 컬럼은 없지만 두 원시 재무 필드로 node_graph 안에서 계산합니다.
+  ↳ total_equity_parent가 0이거나 음수(자본잠식)인 종목은 NaN → `null_policy: "drop"` 처리 권장
+  ↳ ROE는 **높을수록 좋음** → zscore 후 그대로 합산 (neg 불필요)
+
+```json
+{{"nodes": {{
+  "net_inc": {{"node_id": "net_inc", "type": "field", "field_id": "net_income_parent",    "null_policy": "drop"}},
+  "equity":  {{"node_id": "equity",  "type": "field", "field_id": "total_equity_parent",  "null_policy": "drop"}},
+  "roe":     {{"node_id": "roe",     "type": "combine", "op": "div", "inputs": ["net_inc", "equity"], "null_policy": "drop"}},
+  "roe_z":   {{"node_id": "roe_z",   "type": "cs_op",  "op": "zscore", "input": "roe",   "null_policy": "drop"}},
+  "score":   {{"node_id": "score",   "type": "field",  "field_id": "ret_60d"}}
+}}, "output": "roe_z"}}
+```
 
 ## allocator type 및 주요 파라미터
 
@@ -419,6 +435,7 @@ CS 정규화 (섹터중립 zscore):
 | 모멘텀 | ret_60d, ret_20d 등 | 높을수록 좋음 | zscore → 그대로 합산 |
 | 퀄리티 (영업이익 성장) | op_income_growth_yoy | 높을수록 좋음 | zscore → 그대로 합산 |
 | 퀄리티 (매출 성장) | sales_growth_yoy | 높을수록 좋음 | zscore → 그대로 합산 |
+| **ROE (자기자본이익률)** | **net_income_parent ÷ total_equity_parent** | **높을수록 좋음** | **combine div → zscore → 그대로 합산** |
 | **저변동성** | **vol_20d, vol_60d** | **낮을수록 좋음** | **zscore → cs_op neg → 합산** |
 | 저부채/저레버리지 | net_debt_to_equity | 낮을수록 좋음 | zscore → cs_op neg → 합산 |
 | **부채비율 필터** | **net_debt_to_equity** | **임계값 주의** | **"100% 미만" = constant 1.0 (비율), `lt` predicate** |
