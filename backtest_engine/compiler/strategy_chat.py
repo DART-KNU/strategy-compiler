@@ -57,7 +57,7 @@ _SYSTEM_PROMPT_TEMPLATE = """\
 }}
 ```
 
-이중 주기 리밸런싱 예시 (월간 신호 + 주간 회전율 범위 제한 — contest 모드 전용):
+이중 주기 리밸런싱 예시 (월간 신호 + 주간 회전율 범위 제한):
 ```json
 {{
   "rebalancing": {{
@@ -403,15 +403,18 @@ ROE = net_income_parent / total_equity_parent. DB에 직접 컬럼은 없지만 
 **[5단계] 리밸런싱**
 - 주기: 주간 / 월간 / 분기별?
 - 월간이라면 월 몇 번째 거래일에 리밸런싱? (기본: 1번째)
-- **contest 모드 전용 — 이중 주기 실행**: 대회에는 주간 최소 5% 회전율 규정이 있습니다.
-  단순 주간 리밸런싱은 거래비용이 과다하고, 월간 리밸런싱은 주간 5% 규정 미충족입니다.
-  이 경우 `execution_cadence: "weekly"`를 설정하고, **주간 회전율 범위**를 반드시 물어보세요:
+- **회전율 범위 제한 (execution_cadence + min/max_turnover) — research/contest 모두 사용 가능**:
+  주간 리밸런싱에서 거래비용을 줄이거나 대회 최소 회전율 규정을 충족하려면
+  `execution_cadence: "weekly"` + 회전율 범위를 설정하세요.
 
-  → **최소 회전율 (`min_turnover_per_rebalance`)**: "매주 최소 몇 % 거래할까요? (대회 규정 하한 — 보통 5%)"
-  → **최대 회전율 (`max_turnover_per_rebalance`)**: "주당 최대 거래 비중은요? (비용 상한 — 예: 10%, 15%, 제한없음)"
-  - 두 값 모두 null 허용. null이면 해당 방향 제한 없음.
-  - 대회 기본 권장: min=0.05, max=0.10~0.15
-  사용자가 contest 모드를 선택했다면 이 옵션을 자동으로 제안하고 확인받으세요.
+  → **최소 회전율 (`min_turnover_per_rebalance`)**: "매주 최소 몇 % 거래할까요? (대회 규정 하한 — 보통 5%. null이면 제한 없음)"
+  → **최대 회전율 (`max_turnover_per_rebalance`)**: "주당 최대 거래 비중은요? (비용 상한 — 예: 5~15%. null이면 제한 없음)"
+  - 두 값 모두 null 허용.
+  - contest 모드 기본 권장: min=0.05, max=0.10~0.15
+  - research 모드에서도 거래비용 절감 목적으로 max만 설정 가능 (예: max=0.10)
+  - **⚠️ 중요**: Resolved Config에 execution_cadence를 표시했다면, draft_ir의 `rebalancing` 블록에도
+    반드시 `execution_cadence`, `min_turnover_per_rebalance`, `max_turnover_per_rebalance` 를 포함해야 합니다.
+    메시지에만 표시하고 draft_ir에 빠뜨리면 회전율 제약이 전혀 적용되지 않습니다.
 
 **[6단계] 섹터 제약**
 - 섹터 비중 제한이 필요한가? "없음(기본) / 벤치마크 대비 최대 2배(max_sector_multiplier=2) / 절대 상한(max_sector_weight)"
